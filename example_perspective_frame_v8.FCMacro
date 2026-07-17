@@ -1,0 +1,38 @@
+import FreeCAD as App
+import Part
+
+doc=App.newDocument('MarcoPerspectivoV8')
+grp=doc.addObject('App::DocumentObjectGroup','MarcoPerspectivoIA')
+EjeX_PuntoFuga=doc.addObject('Part::Feature','EjeX_PuntoFuga')
+EjeX_PuntoFuga.Shape=Part.makeLine(App.Vector(0,0,0),App.Vector(0.000000,-454.824400,207.689106))
+EjeX_PuntoFuga.ViewObject.LineColor=(1.0,0.2,0.2)
+grp.addObject(EjeX_PuntoFuga)
+EjeY_PuntoFuga=doc.addObject('Part::Feature','EjeY_PuntoFuga')
+EjeY_PuntoFuga.Shape=Part.makeLine(App.Vector(0,0,0),App.Vector(435.056214,-102.360259,-224.161701))
+EjeY_PuntoFuga.ViewObject.LineColor=(0.2,1.0,0.2)
+grp.addObject(EjeY_PuntoFuga)
+EjeZ_PuntoFuga=doc.addObject('Part::Feature','EjeZ_PuntoFuga')
+EjeZ_PuntoFuga.Shape=Part.makeLine(App.Vector(0,0,0),App.Vector(246.426644,180.712872,395.748363))
+EjeZ_PuntoFuga.ViewObject.LineColor=(0.2,0.4,1.0)
+grp.addObject(EjeZ_PuntoFuga)
+cand0=doc.addObject('Part::Feature','EjeExtrusion')
+cand0.Shape=Part.makeLine(App.Vector(0,0,0),App.Vector(0.000000,-341.118300,155.766829))
+cand0.addProperty('App::PropertyString','TipoIA').TipoIA='extrusion_axis'
+cand0.addProperty('App::PropertyFloat','ConfianzaIA').ConfianzaIA=0.408310
+cand0.addProperty('App::PropertyString','RazonIA').RazonIA='Familia dominante de líneas paralelas proyectadas hacia un punto de fuga'
+grp.addObject(cand0)
+cand1=doc.addObject('Part::Feature','PlanoPerspectivo')
+cand1.Shape=Part.makeLine(App.Vector(0,0,0),App.Vector(0.000000,-341.118300,155.766829))
+cand1.addProperty('App::PropertyString','TipoIA').TipoIA='plane'
+cand1.addProperty('App::PropertyFloat','ConfianzaIA').ConfianzaIA=0.383741
+cand1.addProperty('App::PropertyString','RazonIA').RazonIA='Dos familias de paralelas definen direcciones de un plano'
+grp.addObject(cand1)
+cand2=doc.addObject('Part::Feature','PrismaCartesiano')
+cand2.Shape=Part.makeLine(App.Vector(0,0,0),App.Vector(0.000000,-341.118300,155.766829))
+cand2.addProperty('App::PropertyString','TipoIA').TipoIA='box'
+cand2.addProperty('App::PropertyFloat','ConfianzaIA').ConfianzaIA=0.483050
+cand2.addProperty('App::PropertyString','RazonIA').RazonIA='Tres puntos de fuga ortogonalizados definen un marco cartesiano tipo Manhattan'
+grp.addObject(cand2)
+doc.recompute()
+Gui.activeDocument().activeView().viewAxonometric()
+Gui.activeDocument().activeView().fitAll()

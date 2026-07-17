@@ -1,0 +1,18 @@
+import FreeCAD as App
+import Part
+
+doc=App.newDocument('ReconstruccionParametricaV7')
+grp=doc.addObject('App::DocumentObjectGroup','GeometriaIA')
+obj0=doc.addObject('Part::Feature','MantoDetectado')
+obj0.Shape=Part.makeCylinder(249.992718,900.073571,App.Vector(119.963363,-80.026514,450.036430),App.Vector(0.972313,0.200431,0.120144))
+obj0.addProperty('App::PropertyFloat','ConfianzaIA').ConfianzaIA=0.850031
+obj0.addProperty('App::PropertyLength','Residual').Residual=0.630574
+grp.addObject(obj0)
+obj1=doc.addObject('Part::Feature','PlanoDetectado')
+obj1.Shape=Part.makePlane(607.088845,415.119544,App.Vector(312.843926,-196.171152,100.050215),App.Vector(-0.000037,-0.000107,-1.000000))
+obj1.addProperty('App::PropertyFloat','ConfianzaIA').ConfianzaIA=0.843350
+obj1.addProperty('App::PropertyLength','Residual').Residual=0.511119
+grp.addObject(obj1)
+doc.recompute()
+Gui.activeDocument().activeView().viewAxonometric()
+Gui.activeDocument().activeView().fitAll()

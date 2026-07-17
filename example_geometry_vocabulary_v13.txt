@@ -1,0 +1,10 @@
+assembly=conveyor_pulley_compound_geometry conf=0.9412
+shapes=14 relations=10
+CYLINDER 0.97 dominant curved shell and longitudinal generators
+GEAR_DISC 0.97 circular toothed wheel
+GRID_PATTERN 0.96 repeated ceramic/rubber lagging tiles
+BOLT_PATTERN 0.95 repeated fasteners around circular flange
+ANNULUS 0.94 ring around shaft
+DISC 0.93 large circular end plate
+SHAFT 0.92 slender coaxial rotational member
+RECTANGULAR_PRISM 0.91 flat mounting feet and orthogonal faces

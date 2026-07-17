@@ -1,0 +1,13 @@
+# -*- coding: utf-8 -*-
+import FreeCAD as App
+import Part
+
+doc = App.newDocument("LevantamientoIA")
+obj = doc.addObject("Part::Cylinder", "CilindroReconocido")
+obj.Radius = 250.0
+obj.Height = 1000.0
+obj.addProperty("App::PropertyString", "Origen")
+obj.Origen = "Estimación móvil; validar cotas antes de fabricar"
+doc.recompute()
+Gui.activeDocument().activeView().viewAxonometric()
+Gui.activeDocument().activeView().fitAll()

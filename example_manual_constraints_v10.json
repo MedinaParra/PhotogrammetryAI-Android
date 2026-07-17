@@ -1,0 +1,12 @@
+{
+  "coordinateSystem": "image-perspective-to-3d",
+  "aiHypotheses": [
+    {"type":"BOX","label":"Prisma posible","confidence":0.82},
+    {"type":"PLANE","label":"Plano posible","confidence":0.72}
+  ],
+  "manualConstraints": [
+    {"type":"LINE","points":[120,180,760,245],"meaning":"paralela familia X"},
+    {"type":"ELLIPSE","bounds":[180,220,430,520],"meaning":"extremo cilindro"},
+    {"type":"BOX","bounds":[400,160,850,610],"meaning":"volumen ajustado por usuario"}
+  ]
+}

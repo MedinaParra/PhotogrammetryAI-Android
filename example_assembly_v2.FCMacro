@@ -1,0 +1,49 @@
+# -*- coding: utf-8 -*-
+# Generado por Photogrammetry AI Android v0.2
+# Modelo preliminar: verificar cotas y tolerancias antes de fabricar.
+import FreeCAD as App
+import FreeCADGui as Gui
+import Part
+
+doc = App.newDocument("PoleaIA")
+grupo = doc.addObject("App::DocumentObjectGroup", "PrimitivasDetectadas")
+
+obj1 = doc.addObject("Part::Cylinder", "Manto_1")
+obj1.Label = "Manto_1"
+obj1.Radius = 500.000
+obj1.Height = 1750.000
+obj1.Placement.Base = App.Vector(0.000, 0.000, 0.000)
+obj1.addProperty("App::PropertyFloat", "ConfianzaIA", "Levantamiento")
+obj1.ConfianzaIA = 82.00
+obj1.addProperty("App::PropertyString", "Origen", "Levantamiento")
+obj1.Origen = "Estimacion movil; validar cotas antes de fabricar"
+grupo.addObject(obj1)
+
+obj2 = doc.addObject("Part::Cylinder", "Eje_2")
+obj2.Label = "Eje_2"
+obj2.Radius = 113.030
+obj2.Height = 2400.000
+obj2.Placement.Base = App.Vector(0.000, 0.000, -325.000)
+obj2.addProperty("App::PropertyFloat", "ConfianzaIA", "Levantamiento")
+obj2.ConfianzaIA = 79.00
+obj2.addProperty("App::PropertyString", "Origen", "Levantamiento")
+obj2.Origen = "Estimacion movil; validar cotas antes de fabricar"
+grupo.addObject(obj2)
+
+obj3 = doc.addObject("Part::Box", "Placa_3")
+obj3.Label = "Placa_3"
+obj3.Length = 400.000
+obj3.Width = 300.000
+obj3.Height = 40.000
+obj3.Placement.Base = App.Vector(-200.000, -150.000, 0.000)
+obj3.addProperty("App::PropertyFloat", "ConfianzaIA", "Levantamiento")
+obj3.ConfianzaIA = 70.00
+obj3.addProperty("App::PropertyString", "Origen", "Levantamiento")
+obj3.Origen = "Estimacion movil; validar cotas antes de fabricar"
+grupo.addObject(obj3)
+
+doc.recompute()
+Gui.activeDocument().activeView().viewAxonometric()
+Gui.activeDocument().activeView().fitAll()
+print("Modelo preliminar generado:", len(grupo.Group), "primitivas")
+

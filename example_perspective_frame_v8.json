@@ -1,0 +1,9 @@
+{
+  "coordinateSystem": "camera-right-handed",
+  "xAxis": [0.00000000,-0.90964880,0.41537821],
+  "yAxis": [0.87011243,-0.20472052,-0.44832340],
+  "zAxis": [0.49285329,0.36142574,0.79149673],
+  "confidence": 0.33304992,
+  "vanishingPoints": [{"u":640.00000000,"v":-1800.00000000,"confidence":0.42995072},{"u":-900.00000000,"v":300.00000000,"confidence":0.33753037},{"u":1500.00000000,"v":350.00000000,"confidence":0.23166867}],
+  "geometryCandidates": [{"type":"extrusion_axis","name":"EjeExtrusion","confidence":0.40830997},{"type":"plane","name":"PlanoPerspectivo","confidence":0.38374054},{"type":"box","name":"PrismaCartesiano","confidence":0.48304992}]
+}

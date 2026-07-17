@@ -1,0 +1,27 @@
+{
+  "proposal": {
+    "type": "BOX",
+    "label": "Base rectangular propuesta",
+    "visualConfidence": 0.71
+  },
+  "realDimensions": [
+    {
+      "kind": "BASE_SIDE",
+      "imageSegment": [100, 100, 500, 120],
+      "millimetres": 600,
+      "confidence": 0.95
+    }
+  ],
+  "refinedModel": {
+    "metricCalibrated": true,
+    "scaleMmPerPixel": 1.4981,
+    "lengthMm": 629.2,
+    "widthMm": 600.0,
+    "heightMm": 524.3,
+    "confidence": 0.96
+  },
+  "nextCapture": {
+    "instruction": "Muévete 25 grados hacia la derecha manteniendo visible la base",
+    "reason": "Se necesita paralaje para calcular profundidad"
+  }
+}
