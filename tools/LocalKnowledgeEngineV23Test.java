@@ -4,9 +4,9 @@ import cl.ingenieria.photogrammetryai.core.materialhistory.InMemoryMaterialKnowl
 import cl.ingenieria.photogrammetryai.core.materialhistory.LocalPulleyKnowledgeEngine;
 import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialPulleyKnowledgeBase.DimensionKind;
 import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialPulleyKnowledgeBase.MaterialFamily;
+import cl.ingenieria.photogrammetryai.core.materialhistory.PulleyIdentificationRequest;
 import cl.ingenieria.photogrammetryai.core.materialhistory.PulleyMaterialIdentificationEngine;
 import cl.ingenieria.photogrammetryai.core.materialhistory.PulleyMaterialIdentificationEngine.Action;
-import cl.ingenieria.photogrammetryai.core.materialhistory.PulleyMaterialIdentificationEngine.Query;
 import cl.ingenieria.photogrammetryai.core.materialhistory.QualityKnowledgeIngestionService;
 import cl.ingenieria.photogrammetryai.core.materialhistory.QualityReportTextParser;
 import cl.ingenieria.photogrammetryai.core.materialhistory.sqlite.SqlitePulleyKnowledgeSchema;
@@ -31,7 +31,7 @@ public final class LocalKnowledgeEngineV23Test {
         require(store.size() == DriveQualityKnowledgeSeed.create().size(), "Seed family count");
 
         LocalPulleyKnowledgeEngine.IdentificationOutcome outcome = engine.identify(
-                new Query(
+                new PulleyIdentificationRequest(
                         1520.0,
                         "SC 10415863",
                         "2026-1702",
@@ -57,7 +57,7 @@ public final class LocalKnowledgeEngineV23Test {
         require(!audit.operatorConfirmed(), "New identification must not self-confirm");
         require(audit.candidates().size() > 0, "Audit candidates missing");
 
-        IdentificationAudit confirmed = engine.confirm("session-v23-001", "10415863");
+        IdentificationAudit confirmed = engine.confirm("session-v23-001", "Código SAP 10415863");
         require(confirmed.operatorConfirmed(), "Operator confirmation not persisted");
         require(
                 confirmed.selectedMaterialCode().orElse("").equals("10415863"),
