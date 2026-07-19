@@ -17,12 +17,14 @@ on:
       - 'tools/PulleyKnowledgeV21Test.java'
       - 'tools/MaterialHistoryV22Test.java'
       - 'tools/LocalKnowledgeEngineV23Test.java'
+      - 'tools/DimensionReviewV24Test.java'
       - 'tools/run_core_foundation_v16_test.sh'
       - 'tools/run_step_import_v17_test.sh'
       - 'tools/run_few_view_v18_test.sh'
       - 'tools/run_pulley_knowledge_v21_test.sh'
       - 'tools/run_material_history_v22_test.sh'
       - 'tools/run_local_knowledge_engine_v23_test.sh'
+      - 'tools/run_dimension_review_v24_test.sh'
       - '.github/workflows/core-foundation.yml'
 
 permissions:
@@ -66,6 +68,9 @@ jobs:
           bash tools/run_local_knowledge_engine_v23_test.sh > .ci-logs/local-knowledge-v23.log 2>&1
           LOCAL_KNOWLEDGE_EXIT=$?
 
+          bash tools/run_dimension_review_v24_test.sh > .ci-logs/dimension-review-v24.log 2>&1
+          DIMENSION_REVIEW_EXIT=$?
+
           echo '===== core-v16.log ====='
           cat .ci-logs/core-v16.log
           echo '===== step-v17.log ====='
@@ -78,14 +83,17 @@ jobs:
           cat .ci-logs/material-history-v22.log
           echo '===== local-knowledge-v23.log ====='
           cat .ci-logs/local-knowledge-v23.log
+          echo '===== dimension-review-v24.log ====='
+          cat .ci-logs/dimension-review-v24.log
 
           if [ "$CORE_EXIT" -ne 0 ] \
               || [ "$STEP_EXIT" -ne 0 ] \
               || [ "$FEW_VIEW_EXIT" -ne 0 ] \
               || [ "$PULLEY_KB_EXIT" -ne 0 ] \
               || [ "$MATERIAL_HISTORY_EXIT" -ne 0 ] \
-              || [ "$LOCAL_KNOWLEDGE_EXIT" -ne 0 ]; then
-            echo "Core test exits: v16=$CORE_EXIT v17=$STEP_EXIT v18=$FEW_VIEW_EXIT v21=$PULLEY_KB_EXIT v22=$MATERIAL_HISTORY_EXIT v23=$LOCAL_KNOWLEDGE_EXIT"
+              || [ "$LOCAL_KNOWLEDGE_EXIT" -ne 0 ] \
+              || [ "$DIMENSION_REVIEW_EXIT" -ne 0 ]; then
+            echo "Core test exits: v16=$CORE_EXIT v17=$STEP_EXIT v18=$FEW_VIEW_EXIT v21=$PULLEY_KB_EXIT v22=$MATERIAL_HISTORY_EXIT v23=$LOCAL_KNOWLEDGE_EXIT v24=$DIMENSION_REVIEW_EXIT"
             exit 1
           fi
 
