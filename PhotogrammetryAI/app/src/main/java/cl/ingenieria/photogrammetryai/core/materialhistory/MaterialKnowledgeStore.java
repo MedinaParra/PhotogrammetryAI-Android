@@ -3,6 +3,7 @@ package cl.ingenieria.photogrammetryai.core.materialhistory;
 import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialPulleyKnowledgeBase.MaterialFamily;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Mutable persistence boundary for the local pulley knowledge engine.
@@ -22,6 +23,8 @@ public interface MaterialKnowledgeStore extends MaterialKnowledgeCatalog {
 
     /** Saves the query, ranked candidates and final decision for traceability and later learning. */
     void saveIdentificationAudit(IdentificationAudit audit);
+
+    Optional<IdentificationAudit> findIdentificationAudit(String sessionId);
 
     List<IdentificationAudit> recentIdentificationAudits(int limit);
 }
