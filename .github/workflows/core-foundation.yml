@@ -1,0 +1,38 @@
+name: Core foundation
+
+on:
+  push:
+    branches:
+      - main
+      - agent/core-step-tracking-foundation
+  pull_request:
+    paths:
+      - 'PhotogrammetryAI/app/src/main/java/cl/ingenieria/photogrammetryai/core/foundation/**'
+      - 'tools/CoreFoundationV16Test.java'
+      - 'tools/StepImportMapperV17Test.java'
+      - 'tools/run_core_foundation_v16_test.sh'
+      - 'tools/run_step_import_v17_test.sh'
+      - '.github/workflows/core-foundation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pure-java-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Run reconstruction foundation test
+        run: bash tools/run_core_foundation_v16_test.sh
+
+      - name: Run STEP import mapping test
+        run: bash tools/run_step_import_v17_test.sh
