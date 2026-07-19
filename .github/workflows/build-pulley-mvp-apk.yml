@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,6 +35,12 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_reconstruction_core_v27_tests.sh
       - name: Test industrial landscape capture
         run: bash PulleyKnowledgeMvp/tools/run_industrial_capture_v28_tests.sh
+      - name: Test visual correspondences
+        run: bash PulleyKnowledgeMvp/tools/run_visual_correspondence_v29_test.sh
+      - name: Test multiview graph
+        run: bash PulleyKnowledgeMvp/tools/run_view_graph_v30_test.sh
+      - name: Test affine RANSAC
+        run: bash PulleyKnowledgeMvp/tools/run_affine_ransac_v31_test.sh
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -44,12 +50,12 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir -p artifacts
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-horizontal-alpha.apk
-          sha256sum artifacts/SKM-Polea-AI-horizontal-alpha.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-horizontal-v0.5.0-alpha6.apk
+          sha256sum artifacts/SKM-Polea-AI-horizontal-v0.5.0-alpha6.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-horizontal-alpha
+          name: SKM-Polea-AI-horizontal-v0.5.0-alpha6
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
