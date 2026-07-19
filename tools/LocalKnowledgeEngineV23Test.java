@@ -93,14 +93,21 @@ public final class LocalKnowledgeEngineV23Test {
         require(afterFirst.ots().contains("OT-1800"), "New OT must be linked bidirectionally");
         require(store.materialCodesForOt("OT 1800").contains("10415863"), "Reverse OT lookup");
 
-        QualityKnowledgeIngestionService.Result duplicate = engine.ingestQualityReport(reportInput);
-        require(duplicate.accepted(), "Duplicate should be a successful idempotent ingest");
+        QualityKnowledgeIngestionService.ReportInput copiedReport =
+                new QualityKnowledgeIngestionService.ReportInput(
+                        "Informe Evaluación OT-1800 Polea N°6 CV12.pdf",
+                        "drive://quality/codigo-10415863/copia-informe",
+                        report,
+                        "2026-07-19"
+                );
+        QualityKnowledgeIngestionService.Result duplicate = engine.ingestQualityReport(copiedReport);
+        require(duplicate.accepted(), "Drive copy should be a successful idempotent ingest");
         MaterialFamily afterDuplicate = store.findByMaterialCode("10415863")
                 .orElseThrow(AssertionError::new);
-        require(afterDuplicate.sources().size() == sourceCount, "Duplicate source was inserted");
+        require(afterDuplicate.sources().size() == sourceCount, "Copied source was inserted twice");
         require(
                 afterDuplicate.dimensions(DimensionKind.SHELL_LENGTH).size() == lengthEvidenceCount,
-                "Duplicate dimension was inserted"
+                "Copied dimension was inserted twice"
         );
 
         QualityKnowledgeIngestionService.Result rejected = engine.ingestQualityReport(
