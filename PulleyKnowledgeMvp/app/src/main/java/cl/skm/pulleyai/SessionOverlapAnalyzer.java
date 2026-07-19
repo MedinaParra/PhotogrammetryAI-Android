@@ -40,13 +40,17 @@ public final class SessionOverlapAnalyzer {
                 CachedFrame right = accepted.get(j);
                 if (!candidate(left.frame, right.frame)) continue;
                 VisualFeatureCore.PairResult match = VisualFeatureCore.match(left.features, right.features);
-                int coherent = coherent(match);
-                boolean isStrong = "STRONG".equals(match.status) && coherent >= 24;
-                boolean isUsable = isStrong || ("USABLE".equals(match.status) && coherent >= 10);
+                List<AffineRansacCore.PointPair> geometryPairs = geometryPairs(left.features, right.features, match);
+                AffineRansacCore.Result geometry = AffineRansacCore.estimate(geometryPairs, 3.5, 600);
+                int inliers = geometry.inliers.size();
+                boolean isStrong = geometry.solved && "STRONG".equals(geometry.status);
+                boolean isUsable = isStrong || (geometry.solved && "USABLE".equals(geometry.status));
                 Pair pair = new Pair(left.frame.sequence, right.frame.sequence, left.frame.band,
                         right.frame.band, left.frame.sector, right.frame.sector,
-                        left.features.features.size(), right.features.features.size(), match.matches.size(), coherent,
-                        match.medianDx, match.medianDy, isStrong ? "STRONG" : isUsable ? "USABLE" : "WEAK");
+                        left.features.features.size(), right.features.features.size(), match.matches.size(), inliers,
+                        match.medianDx, match.medianDy, geometry.rmsPx, geometry.inlierRatio,
+                        geometry.model == null ? Double.NaN : geometry.model.determinant(),
+                        isStrong ? "STRONG" : isUsable ? "USABLE" : "WEAK");
                 pairs.add(pair);
                 graphEdges.add(new ViewGraphCore.Edge(i, j, isUsable, isStrong));
                 if (isStrong) strong++;
@@ -101,13 +105,16 @@ public final class SessionOverlapAnalyzer {
         }
     }
 
-    private static int coherent(VisualFeatureCore.PairResult result) {
-        int count = 0;
-        for (VisualFeatureCore.Match match : result.matches) {
-            if (Math.abs(match.dx - result.medianDx) <= 5.0
-                    && Math.abs(match.dy - result.medianDy) <= 5.0) count++;
+    private static List<AffineRansacCore.PointPair> geometryPairs(
+            VisualFeatureCore.FeatureSet left, VisualFeatureCore.FeatureSet right,
+            VisualFeatureCore.PairResult matches) {
+        List<AffineRansacCore.PointPair> pairs = new ArrayList<AffineRansacCore.PointPair>();
+        for (VisualFeatureCore.Match match : matches.matches) {
+            VisualFeatureCore.Feature a = left.features.get(match.leftIndex);
+            VisualFeatureCore.Feature b = right.features.get(match.rightIndex);
+            pairs.add(new AffineRansacCore.PointPair(a.x, a.y, b.x, b.y));
         }
-        return count;
+        return pairs;
     }
 
     private static int circularGap(int a, int b) {
@@ -145,14 +152,18 @@ public final class SessionOverlapAnalyzer {
         public final int leftFeatures;
         public final int rightFeatures;
         public final int matches;
-        public final int coherentMatches;
+        public final int geometryInliers;
         public final double medianDx;
         public final double medianDy;
+        public final double geometryRmsPx;
+        public final double inlierRatio;
+        public final double affineDeterminant;
         public final String status;
 
         Pair(int leftSequence, int rightSequence, String leftBand, String rightBand,
              int leftSector, int rightSector, int leftFeatures, int rightFeatures,
-             int matches, int coherentMatches, double medianDx, double medianDy, String status) {
+             int matches, int geometryInliers, double medianDx, double medianDy,
+             double geometryRmsPx, double inlierRatio, double affineDeterminant, String status) {
             this.leftSequence = leftSequence;
             this.rightSequence = rightSequence;
             this.leftBand = leftBand;
@@ -162,9 +173,12 @@ public final class SessionOverlapAnalyzer {
             this.leftFeatures = leftFeatures;
             this.rightFeatures = rightFeatures;
             this.matches = matches;
-            this.coherentMatches = coherentMatches;
+            this.geometryInliers = geometryInliers;
             this.medianDx = medianDx;
             this.medianDy = medianDy;
+            this.geometryRmsPx = geometryRmsPx;
+            this.inlierRatio = inlierRatio;
+            this.affineDeterminant = affineDeterminant;
             this.status = status;
         }
     }
@@ -216,10 +230,13 @@ public final class SessionOverlapAnalyzer {
                 json.append(String.format(Locale.ROOT,
                         "    {\"left\":%d,\"right\":%d,\"bands\":[\"%s\",\"%s\"]," +
                                 "\"sectors\":[%d,%d],\"features\":[%d,%d],\"matches\":%d," +
-                                "\"coherent\":%d,\"medianShift\":[%.3f,%.3f],\"status\":\"%s\"}",
+                                "\"geometryInliers\":%d,\"medianShift\":[%.3f,%.3f]," +
+                                "\"geometryRmsPx\":%.3f,\"inlierRatio\":%.4f," +
+                                "\"affineDeterminant\":%.5f,\"status\":\"%s\"}",
                         p.leftSequence, p.rightSequence, p.leftBand, p.rightBand,
                         p.leftSector, p.rightSector, p.leftFeatures, p.rightFeatures,
-                        p.matches, p.coherentMatches, p.medianDx, p.medianDy, p.status));
+                        p.matches, p.geometryInliers, p.medianDx, p.medianDy, p.geometryRmsPx,
+                        p.inlierRatio, p.affineDeterminant, p.status));
                 if (i + 1 < pairs.size()) json.append(',');
                 json.append('\n');
             }
