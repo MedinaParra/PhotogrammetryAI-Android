@@ -53,8 +53,11 @@ if(EXISTS "${OCCT_INCLUDE_DIR}/Standard.hxx")
         TKG2d
         TKG3d
         TKGeomBase
+        TKGeomAlgo
         TKBRep
         TKTopAlgo
+        TKPrim
+        TKBO
         TKMesh
         TKXSBase
         TKSTEPBase
