@@ -29,8 +29,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Test pure capture core
+      - name: Test capture core
         run: bash PulleyKnowledgeMvp/tools/run_capture_core_v26_tests.sh
+      - name: Test scale and baseline core
+        run: bash PulleyKnowledgeMvp/tools/run_reconstruction_core_v27_tests.sh
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
