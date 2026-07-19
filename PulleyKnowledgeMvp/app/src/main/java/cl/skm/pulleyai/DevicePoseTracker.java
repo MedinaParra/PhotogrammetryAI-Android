@@ -60,6 +60,14 @@ public final class DevicePoseTracker implements SensorEventListener {
         return new Snapshot(yaw, pitch, roll, motion);
     }
 
+    public boolean hasOrientationSensor() {
+        return rotationSensor != null;
+    }
+
+    public boolean hasGyroscope() {
+        return gyroscope != null;
+    }
+
     @Override public void onSensorChanged(SensorEvent event) {
         if (event.sensor == rotationSensor) {
             SensorManager.getRotationMatrixFromVector(rotation, event.values);
