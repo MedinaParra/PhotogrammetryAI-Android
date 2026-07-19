@@ -7,7 +7,36 @@ import java.util.List;
 /** SQLite schema shared by the Android adapter and schema validation tools. */
 public final class SqlitePulleyKnowledgeSchema {
     public static final String DATABASE_NAME = "pulley_knowledge.db";
-    public static final int DATABASE_VERSION = 1;
+    public static final int DATABASE_VERSION = 2;
+
+    private static final String CREATE_DIMENSION_REVIEW =
+            "CREATE TABLE IF NOT EXISTS dimension_review ("
+                    + "session_id TEXT PRIMARY KEY NOT NULL,"
+                    + "material_code TEXT NOT NULL,"
+                    + "identification_action TEXT NOT NULL,"
+                    + "created_at_epoch_ms INTEGER NOT NULL,"
+                    + "FOREIGN KEY(session_id) REFERENCES identification_session(session_id) ON DELETE CASCADE)";
+
+    private static final String CREATE_DIMENSION_REVIEW_ITEM =
+            "CREATE TABLE IF NOT EXISTS dimension_review_item ("
+                    + "session_id TEXT NOT NULL,"
+                    + "kind TEXT NOT NULL,"
+                    + "label TEXT NOT NULL,"
+                    + "recommended_value_mm REAL NOT NULL CHECK(recommended_value_mm > 0),"
+                    + "historical_value_mm REAL,"
+                    + "scan_value_mm REAL,"
+                    + "tolerance_mm REAL NOT NULL CHECK(tolerance_mm > 0),"
+                    + "confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),"
+                    + "priority TEXT NOT NULL,"
+                    + "origin TEXT NOT NULL,"
+                    + "source_summary TEXT NOT NULL DEFAULT '',"
+                    + "response_status TEXT NOT NULL,"
+                    + "operator_value_mm REAL,"
+                    + "deviation_mm REAL,"
+                    + "note TEXT NOT NULL DEFAULT '',"
+                    + "answered_at_epoch_ms INTEGER,"
+                    + "PRIMARY KEY(session_id, kind),"
+                    + "FOREIGN KEY(session_id) REFERENCES dimension_review(session_id) ON DELETE CASCADE)";
 
     public static final List<String> CREATE_STATEMENTS = Collections.unmodifiableList(Arrays.asList(
             "CREATE TABLE IF NOT EXISTS schema_meta ("
@@ -149,11 +178,27 @@ public final class SqlitePulleyKnowledgeSchema {
                     + "confirmed_by TEXT NOT NULL DEFAULT '',"
                     + "note TEXT NOT NULL DEFAULT '',"
                     + "FOREIGN KEY(session_id) REFERENCES identification_session(session_id) ON DELETE CASCADE)",
-            "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', '1')",
+            CREATE_DIMENSION_REVIEW,
+            CREATE_DIMENSION_REVIEW_ITEM,
+            "CREATE INDEX IF NOT EXISTS idx_dimension_review_material "
+                    + "ON dimension_review(material_code, created_at_epoch_ms DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_dimension_review_pending "
+                    + "ON dimension_review_item(response_status, priority)",
+            "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', '2')",
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('knowledge_format', 'MATERIAL_PULLEY_KB_V1')"
     ));
 
-    /** Clears only imported technical knowledge. Field audits and confirmations are preserved. */
+    public static final List<String> MIGRATION_1_TO_2 = Collections.unmodifiableList(Arrays.asList(
+            CREATE_DIMENSION_REVIEW,
+            CREATE_DIMENSION_REVIEW_ITEM,
+            "CREATE INDEX IF NOT EXISTS idx_dimension_review_material "
+                    + "ON dimension_review(material_code, created_at_epoch_ms DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_dimension_review_pending "
+                    + "ON dimension_review_item(response_status, priority)",
+            "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', '2')"
+    ));
+
+    /** Clears imported knowledge only. Field sessions, answers and confirmations are preserved. */
     public static final List<String> CLEAR_KNOWLEDGE_STATEMENTS = Collections.unmodifiableList(
             Arrays.asList(
                     "DELETE FROM component_evidence",
