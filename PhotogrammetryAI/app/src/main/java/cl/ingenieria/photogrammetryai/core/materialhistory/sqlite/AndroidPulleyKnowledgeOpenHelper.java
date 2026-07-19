@@ -30,11 +30,25 @@ public final class AndroidPulleyKnowledgeOpenHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (oldVersion == newVersion) return;
-        throw new IllegalStateException(
-                "Unsupported pulley knowledge migration " + oldVersion + " -> " + newVersion
-                        + ". Add an explicit non-destructive migration before increasing the version."
-        );
+        int version = oldVersion;
+        if (version == 1 && newVersion >= 2) {
+            db.beginTransaction();
+            try {
+                for (String statement : SqlitePulleyKnowledgeSchema.MIGRATION_1_TO_2) {
+                    db.execSQL(statement);
+                }
+                db.setTransactionSuccessful();
+                version = 2;
+            } finally {
+                db.endTransaction();
+            }
+        }
+        if (version != newVersion) {
+            throw new IllegalStateException(
+                    "Unsupported pulley knowledge migration " + oldVersion + " -> " + newVersion
+                            + ". Add an explicit non-destructive migration before increasing the version."
+            );
+        }
     }
 
     @Override
