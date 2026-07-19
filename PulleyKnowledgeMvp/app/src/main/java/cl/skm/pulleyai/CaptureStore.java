@@ -14,7 +14,10 @@ import java.util.UUID;
 /** Independent, non-destructive store for capture sessions and full-resolution frames. */
 public final class CaptureStore extends SQLiteOpenHelper {
     private static final String DB_NAME = "capture_sessions.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
+    private static final String SESSION_COLUMNS =
+            "id,label,status,material_code,ot,shell_length_mm,accepted,rejected,low_mask,high_mask," +
+                    "overlap_status,overlap_ready,overlap_usable_pairs,overlap_components,overlap_updated_at";
 
     public static final class Session {
         public final String id;
@@ -27,9 +30,15 @@ public final class CaptureStore extends SQLiteOpenHelper {
         public final int rejected;
         public final int lowMask;
         public final int highMask;
+        public final String overlapStatus;
+        public final boolean overlapReady;
+        public final int overlapUsablePairs;
+        public final int overlapComponents;
+        public final Long overlapUpdatedAt;
 
         Session(String id, String label, String status, String code, String ot, Double shellLengthMm,
-                int accepted, int rejected, int lowMask, int highMask) {
+                int accepted, int rejected, int lowMask, int highMask, String overlapStatus,
+                boolean overlapReady, int overlapUsablePairs, int overlapComponents, Long overlapUpdatedAt) {
             this.id = id;
             this.label = label;
             this.status = status;
@@ -40,6 +49,11 @@ public final class CaptureStore extends SQLiteOpenHelper {
             this.rejected = rejected;
             this.lowMask = lowMask;
             this.highMask = highMask;
+            this.overlapStatus = overlapStatus;
+            this.overlapReady = overlapReady;
+            this.overlapUsablePairs = overlapUsablePairs;
+            this.overlapComponents = overlapComponents;
+            this.overlapUpdatedAt = overlapUpdatedAt;
         }
     }
 
@@ -115,7 +129,10 @@ public final class CaptureStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE session(id TEXT PRIMARY KEY,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL," +
                 "status TEXT NOT NULL,label TEXT NOT NULL,material_code TEXT,ot TEXT,shell_length_mm REAL," +
                 "accepted INTEGER NOT NULL DEFAULT 0,rejected INTEGER NOT NULL DEFAULT 0," +
-                "low_mask INTEGER NOT NULL DEFAULT 0,high_mask INTEGER NOT NULL DEFAULT 0)");
+                "low_mask INTEGER NOT NULL DEFAULT 0,high_mask INTEGER NOT NULL DEFAULT 0," +
+                "overlap_status TEXT NOT NULL DEFAULT 'NOT_RUN',overlap_ready INTEGER NOT NULL DEFAULT 0," +
+                "overlap_usable_pairs INTEGER NOT NULL DEFAULT 0,overlap_components INTEGER NOT NULL DEFAULT 0," +
+                "overlap_updated_at INTEGER)");
         db.execSQL("CREATE TABLE frame(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,seq INTEGER NOT NULL," +
                 "file_path TEXT NOT NULL,created_at INTEGER NOT NULL,yaw REAL NOT NULL,pitch REAL NOT NULL,roll REAL NOT NULL," +
                 "exposure_ns INTEGER,iso INTEGER,focus_distance REAL,width INTEGER NOT NULL,height INTEGER NOT NULL," +
@@ -135,9 +152,14 @@ public final class CaptureStore extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE frame ADD COLUMN jpeg_orientation INTEGER");
             db.execSQL("ALTER TABLE frame ADD COLUMN focal_length_mm REAL");
         }
-        if (newVersion > 2) {
-            throw new IllegalStateException("Missing capture migration " + oldVersion + " -> " + newVersion);
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE session ADD COLUMN overlap_status TEXT NOT NULL DEFAULT 'NOT_RUN'");
+            db.execSQL("ALTER TABLE session ADD COLUMN overlap_ready INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE session ADD COLUMN overlap_usable_pairs INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE session ADD COLUMN overlap_components INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE session ADD COLUMN overlap_updated_at INTEGER");
         }
+        if (newVersion > 3) throw new IllegalStateException("Missing capture migration " + oldVersion + " -> " + newVersion);
     }
 
     public String createSession(String label, String code, String ot, Double shellLengthMm) {
@@ -151,8 +173,7 @@ public final class CaptureStore extends SQLiteOpenHelper {
         row.put("label", clean(label, "Levantamiento de polea"));
         putNullable(row, "material_code", cleanNullable(code));
         putNullable(row, "ot", cleanNullable(ot));
-        if (shellLengthMm == null) row.putNull("shell_length_mm");
-        else row.put("shell_length_mm", shellLengthMm);
+        if (shellLengthMm == null) row.putNull("shell_length_mm"); else row.put("shell_length_mm", shellLengthMm);
         getWritableDatabase().insertOrThrow("session", null, row);
         sessionDir(id);
         return id;
@@ -160,37 +181,26 @@ public final class CaptureStore extends SQLiteOpenHelper {
 
     public Session getSession(String id) {
         if (id == null || id.trim().isEmpty()) return null;
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,label,status,material_code,ot,shell_length_mm,accepted,rejected,low_mask,high_mask " +
-                        "FROM session WHERE id=?", new String[]{id});
-        try { return c.moveToFirst() ? readSession(c) : null; }
-        finally { c.close(); }
+        Cursor c = getReadableDatabase().rawQuery("SELECT " + SESSION_COLUMNS + " FROM session WHERE id=?", new String[]{id});
+        try { return c.moveToFirst() ? readSession(c) : null; } finally { c.close(); }
     }
 
     public Session latestOpen() {
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,label,status,material_code,ot,shell_length_mm,accepted,rejected,low_mask,high_mask " +
-                        "FROM session WHERE status='CAPTURING' ORDER BY updated_at DESC LIMIT 1", null);
-        try { return c.moveToFirst() ? readSession(c) : null; }
-        finally { c.close(); }
+        Cursor c = getReadableDatabase().rawQuery("SELECT " + SESSION_COLUMNS + " FROM session WHERE status='CAPTURING' ORDER BY updated_at DESC LIMIT 1", null);
+        try { return c.moveToFirst() ? readSession(c) : null; } finally { c.close(); }
     }
 
     public List<Session> recent(int limit) {
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,label,status,material_code,ot,shell_length_mm,accepted,rejected,low_mask,high_mask " +
-                        "FROM session ORDER BY updated_at DESC LIMIT ?",
+        Cursor c = getReadableDatabase().rawQuery("SELECT " + SESSION_COLUMNS + " FROM session ORDER BY updated_at DESC LIMIT ?",
                 new String[]{Integer.toString(Math.max(1, Math.min(50, limit)))});
         List<Session> out = new ArrayList<Session>();
-        try { while (c.moveToNext()) out.add(readSession(c)); }
-        finally { c.close(); }
+        try { while (c.moveToNext()) out.add(readSession(c)); } finally { c.close(); }
         return out;
     }
 
     public int nextSequence(String sessionId) {
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT COALESCE(MAX(seq),0)+1 FROM frame WHERE session_id=?", new String[]{sessionId});
-        try { return c.moveToFirst() ? c.getInt(0) : 1; }
-        finally { c.close(); }
+        Cursor c = getReadableDatabase().rawQuery("SELECT COALESCE(MAX(seq),0)+1 FROM frame WHERE session_id=?", new String[]{sessionId});
+        try { return c.moveToFirst() ? c.getInt(0) : 1; } finally { c.close(); }
     }
 
     public void saveFrame(String sessionId, int seq, File file, double yaw, double pitch, double roll,
@@ -240,13 +250,20 @@ public final class CaptureStore extends SQLiteOpenHelper {
                 accepted++;
                 if ("HIGH".equals(band)) high = CoveragePlanner.addSector(high, sector);
                 else low = CoveragePlanner.addSector(low, sector);
-            } else rejected++;
+            } else {
+                rejected++;
+            }
             ContentValues update = new ContentValues();
             update.put("updated_at", System.currentTimeMillis());
             update.put("accepted", accepted);
             update.put("rejected", rejected);
             update.put("low_mask", low);
             update.put("high_mask", high);
+            update.put("overlap_status", "STALE");
+            update.put("overlap_ready", 0);
+            update.put("overlap_usable_pairs", 0);
+            update.put("overlap_components", 0);
+            update.putNull("overlap_updated_at");
             db.update("session", update, "id=?", new String[]{sessionId});
             db.setTransactionSuccessful();
         } finally {
@@ -258,7 +275,8 @@ public final class CaptureStore extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT seq,file_path,created_at,yaw,pitch,roll,exposure_ns,iso,focus_distance,width,height," +
                         "blur,luma,motion,quality,reason,band,sector,sha256,camera_id,sensor_orientation,jpeg_orientation,focal_length_mm " +
-                        "FROM frame WHERE session_id=? ORDER BY seq", new String[]{sessionId});
+                        "FROM frame WHERE session_id=? ORDER BY seq",
+                new String[]{sessionId});
         List<Frame> out = new ArrayList<Frame>();
         try {
             while (c.moveToNext()) {
@@ -271,8 +289,21 @@ public final class CaptureStore extends SQLiteOpenHelper {
                         c.isNull(20) ? null : c.getInt(20), c.isNull(21) ? null : c.getInt(21),
                         c.isNull(22) ? null : c.getFloat(22)));
             }
-        } finally { c.close(); }
+        } finally {
+            c.close();
+        }
         return out;
+    }
+
+    public void saveOverlapResult(String id, String status, boolean ready, int usablePairs, int components) {
+        ContentValues row = new ContentValues();
+        row.put("overlap_status", status == null ? "UNKNOWN" : status);
+        row.put("overlap_ready", ready ? 1 : 0);
+        row.put("overlap_usable_pairs", usablePairs);
+        row.put("overlap_components", components);
+        row.put("overlap_updated_at", System.currentTimeMillis());
+        row.put("updated_at", System.currentTimeMillis());
+        getWritableDatabase().update("session", row, "id=?", new String[]{id});
     }
 
     public void finishSession(String id) {
@@ -288,40 +319,25 @@ public final class CaptureStore extends SQLiteOpenHelper {
 
     File sessionDir(String id) {
         File dir = new File(new File(appContext.getFilesDir(), "capture_sessions"), id);
-        if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
-            throw new IllegalStateException("Cannot create " + dir);
-        }
+        if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) throw new IllegalStateException("Cannot create " + dir);
         return dir;
     }
 
     private static Session querySession(SQLiteDatabase db, String id) {
-        Cursor c = db.rawQuery(
-                "SELECT id,label,status,material_code,ot,shell_length_mm,accepted,rejected,low_mask,high_mask " +
-                        "FROM session WHERE id=?", new String[]{id});
-        try { return c.moveToFirst() ? readSession(c) : null; }
-        finally { c.close(); }
+        Cursor c = db.rawQuery("SELECT " + SESSION_COLUMNS + " FROM session WHERE id=?", new String[]{id});
+        try { return c.moveToFirst() ? readSession(c) : null; } finally { c.close(); }
     }
 
     private static Session readSession(Cursor c) {
         return new Session(c.getString(0), c.getString(1), c.getString(2), nullable(c, 3), nullable(c, 4),
-                c.isNull(5) ? null : c.getDouble(5), c.getInt(6), c.getInt(7), c.getInt(8), c.getInt(9));
+                c.isNull(5) ? null : c.getDouble(5), c.getInt(6), c.getInt(7), c.getInt(8), c.getInt(9),
+                c.isNull(10) ? "NOT_RUN" : c.getString(10), c.getInt(11) != 0, c.getInt(12), c.getInt(13),
+                c.isNull(14) ? null : c.getLong(14));
     }
 
-    private static String nullable(Cursor c, int index) {
-        return c.isNull(index) ? "" : c.getString(index);
-    }
-
-    private static String clean(String value, String fallback) {
-        String clean = cleanNullable(value);
-        return clean == null ? fallback : clean;
-    }
-
-    private static String cleanNullable(String value) {
-        if (value == null) return null;
-        String clean = value.trim();
-        return clean.isEmpty() ? null : clean;
-    }
-
+    private static String nullable(Cursor c, int index) { return c.isNull(index) ? "" : c.getString(index); }
+    private static String clean(String value, String fallback) { String clean = cleanNullable(value); return clean == null ? fallback : clean; }
+    private static String cleanNullable(String value) { if (value == null) return null; String clean = value.trim(); return clean.isEmpty() ? null : clean; }
     private static void putNullable(ContentValues row, String key, Object value) {
         if (value == null) row.putNull(key);
         else if (value instanceof Long) row.put(key, (Long) value);
