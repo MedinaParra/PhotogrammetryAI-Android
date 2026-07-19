@@ -2,10 +2,12 @@ package cl.skm.pulleyai;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.InputType;
+import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -51,7 +53,7 @@ public final class LauncherActivity extends Activity {
         TextView title = text("SKM Polea AI", 28, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
-        TextView subtitle = text("Captura single-device, conocimiento local y validación dimensional trazable.", 15, false);
+        TextView subtitle = text("Captura industrial horizontal, conocimiento local y validación dimensional trazable.", 15, false);
         subtitle.setPadding(0, dp(4), 0, dp(14));
         root.addView(subtitle);
 
@@ -61,23 +63,31 @@ public final class LauncherActivity extends Activity {
         root.addView(stateView);
 
         Button create = button("NUEVA SESIÓN DE CAPTURA");
-        create.setOnClickListener(view -> showCreateDialog());
+        create.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { showCreateDialog(); }
+        });
         root.addView(create);
 
         Button resume = button("CONTINUAR ÚLTIMA CAPTURA");
-        resume.setOnClickListener(view -> {
-            CaptureStore.Session session = captureStore.latestOpen();
-            if (session == null) Toast.makeText(this, "No hay una sesión abierta.", Toast.LENGTH_LONG).show();
-            else openCapture(session.id);
+        resume.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                CaptureStore.Session session = captureStore.latestOpen();
+                if (session == null) Toast.makeText(LauncherActivity.this, "No hay una sesión abierta.", Toast.LENGTH_LONG).show();
+                else openCapture(session.id);
+            }
         });
         root.addView(resume);
 
         Button knowledge = button("CONOCIMIENTO Y VALIDACIÓN DE COTAS");
-        knowledge.setOnClickListener(view -> startActivity(new Intent(this, MainActivity.class)));
+        knowledge.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                startActivity(new Intent(LauncherActivity.this, MainActivity.class));
+            }
+        });
         root.addView(knowledge);
 
         TextView warning = text(
-                "La captura es real. La aplicación todavía no declara reconstrucción 3D hasta calcular poses, escala y error.",
+                "La captura es horizontal y trazable. La aplicación no declara reconstrucción 3D hasta calcular poses, escala y error.",
                 12,
                 false
         );
@@ -97,33 +107,45 @@ public final class LauncherActivity extends Activity {
     private void showCreateDialog() {
         LinearLayout form = vertical();
         form.setPadding(dp(18), 0, dp(18), 0);
-        EditText label = input("Nombre de la sesión", InputType.TYPE_CLASS_TEXT);
-        EditText code = input("Código material / SAP / SC (opcional)", InputType.TYPE_CLASS_TEXT);
-        EditText ot = input("OT (opcional)", InputType.TYPE_CLASS_TEXT);
-        EditText length = input("Largo del manto en mm (recomendado)",
+        final EditText label = input("Nombre de la sesión", InputType.TYPE_CLASS_TEXT);
+        final EditText code = input("Código material / SAP / SC (opcional)", InputType.TYPE_CLASS_TEXT);
+        final EditText ot = input("OT (opcional)", InputType.TYPE_CLASS_TEXT);
+        final EditText length = input("Largo real del manto en mm (obligatorio)",
                 InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         form.addView(label);
         form.addView(code);
         form.addView(ot);
         form.addView(length);
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Nueva sesión")
-                .setMessage("Puede capturar sin código u OT. El largo real será obligatorio antes de escalar la reconstrucción.")
+                .setMessage("Use el teléfono horizontal. Puede omitir código u OT, pero el largo real del manto es obligatorio para una sesión métrica.")
                 .setView(form)
                 .setPositiveButton("CREAR Y ABRIR", null)
                 .setNegativeButton("CANCELAR", null)
                 .create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
-            String id = captureStore.createSession(
-                    label.getText().toString(),
-                    code.getText().toString(),
-                    ot.getText().toString(),
-                    parsePositive(length.getText().toString())
-            );
-            dialog.dismiss();
-            openCapture(id);
-        }));
+        dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+            @Override public void onShow(DialogInterface ignored) {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+                    @Override public void onClick(View view) {
+                        Double shellLength = parsePositive(length.getText().toString());
+                        if (shellLength == null) {
+                            length.setError("Ingrese un largo válido mayor que cero");
+                            length.requestFocus();
+                            return;
+                        }
+                        String id = captureStore.createSession(
+                                label.getText().toString(),
+                                code.getText().toString(),
+                                ot.getText().toString(),
+                                shellLength
+                        );
+                        dialog.dismiss();
+                        openCapture(id);
+                    }
+                });
+            }
+        });
         dialog.show();
     }
 
@@ -146,7 +168,7 @@ public final class LauncherActivity extends Activity {
             recentContainer.addView(text("Aún no existen sesiones de captura.", 13, false));
             return;
         }
-        for (CaptureStore.Session session : recent) {
+        for (final CaptureStore.Session session : recent) {
             LinearLayout card = vertical();
             card.setPadding(dp(12), dp(10), dp(12), dp(10));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
@@ -163,7 +185,9 @@ public final class LauncherActivity extends Activity {
             }
             card.addView(text(details, 13, false));
             Button openButton = button("ABRIR SESIÓN");
-            openButton.setOnClickListener(view -> openCapture(session.id));
+            openButton.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View view) { openCapture(session.id); }
+            });
             card.addView(openButton);
             recentContainer.addView(card);
         }
@@ -210,7 +234,7 @@ public final class LauncherActivity extends Activity {
         if (raw == null || raw.trim().isEmpty()) return null;
         try {
             double value = Double.parseDouble(raw.trim().replace(',', '.'));
-            return value > 0.0 && Double.isFinite(value) ? value : null;
+            return value > 0.0 && !Double.isNaN(value) && !Double.isInfinite(value) ? value : null;
         } catch (NumberFormatException ignored) {
             return null;
         }
