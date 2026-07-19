@@ -31,8 +31,33 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Run reconstruction foundation test
-        run: bash tools/run_core_foundation_v16_test.sh
+      - name: Run pure Java core tests
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .ci-logs
 
-      - name: Run STEP import mapping test
-        run: bash tools/run_step_import_v17_test.sh
+          bash tools/run_core_foundation_v16_test.sh > .ci-logs/core-v16.log 2>&1
+          CORE_EXIT=$?
+
+          bash tools/run_step_import_v17_test.sh > .ci-logs/step-v17.log 2>&1
+          STEP_EXIT=$?
+
+          echo '===== core-v16.log ====='
+          cat .ci-logs/core-v16.log
+          echo '===== step-v17.log ====='
+          cat .ci-logs/step-v17.log
+
+          if [ "$CORE_EXIT" -ne 0 ] || [ "$STEP_EXIT" -ne 0 ]; then
+            echo "Core test exits: v16=$CORE_EXIT v17=$STEP_EXIT"
+            exit 1
+          fi
+
+      - name: Upload core diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-foundation-diagnostics
+          path: .ci-logs
+          if-no-files-found: warn
+          retention-days: 7
