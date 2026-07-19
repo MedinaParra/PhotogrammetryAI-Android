@@ -1,0 +1,1 @@
+Version integration marker for 0.5.0-alpha6. This file will be replaced by build metadata before release.
