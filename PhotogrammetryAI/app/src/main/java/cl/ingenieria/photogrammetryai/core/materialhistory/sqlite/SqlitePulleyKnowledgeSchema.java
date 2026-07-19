@@ -153,12 +153,9 @@ public final class SqlitePulleyKnowledgeSchema {
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('knowledge_format', 'MATERIAL_PULLEY_KB_V1')"
     ));
 
+    /** Clears only imported technical knowledge. Field audits and confirmations are preserved. */
     public static final List<String> CLEAR_KNOWLEDGE_STATEMENTS = Collections.unmodifiableList(
             Arrays.asList(
-                    "DELETE FROM knowledge_confirmation",
-                    "DELETE FROM identification_candidate",
-                    "DELETE FROM identification_session",
-                    "DELETE FROM ingestion_run",
                     "DELETE FROM component_evidence",
                     "DELETE FROM dimension_evidence",
                     "DELETE FROM intervention_note",
