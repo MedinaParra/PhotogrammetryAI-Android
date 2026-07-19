@@ -31,19 +31,25 @@ public final class SessionPackageExporter {
         File output = new File(exportDir, safe + "_" + session.id.substring(0, 8) + ".zip");
         try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(output)))) {
             putText(zip, "manifest.json", manifest(session, frames));
-            byte[] buffer = new byte[64 * 1024];
+            File overlap = new File(store.sessionDir(sessionId), "overlap_report.json");
+            if (overlap.isFile()) copyEntry(zip, overlap, "overlap_report.json");
             for (CaptureStore.Frame frame : frames) {
                 File source = new File(frame.filePath);
                 if (!source.isFile()) continue;
-                zip.putNextEntry(new ZipEntry(String.format(Locale.ROOT, "frames/frame_%04d.jpg", frame.sequence)));
-                try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(source))) {
-                    int read;
-                    while ((read = input.read(buffer)) >= 0) zip.write(buffer, 0, read);
-                }
-                zip.closeEntry();
+                copyEntry(zip, source, String.format(Locale.ROOT, "frames/frame_%04d.jpg", frame.sequence));
             }
         }
         return output;
+    }
+
+    private static void copyEntry(ZipOutputStream zip, File source, String name) throws Exception {
+        zip.putNextEntry(new ZipEntry(name));
+        byte[] buffer = new byte[64 * 1024];
+        try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(source))) {
+            int read;
+            while ((read = input.read(buffer)) >= 0) zip.write(buffer, 0, read);
+        }
+        zip.closeEntry();
     }
 
     private static String manifest(CaptureStore.Session session, List<CaptureStore.Frame> frames) {
