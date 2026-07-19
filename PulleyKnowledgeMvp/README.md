@@ -1,14 +1,28 @@
-# SKM Polea AI — APK MVP
+# SKM Polea AI — producto Android alpha
 
-Aplicación Android offline para:
+Aplicación Android offline orientada al levantamiento de poleas con un solo teléfono.
 
-- identificar familias por código de material, OT, largo y diámetro;
-- consultar una semilla SQLite local;
-- sugerir largo, diámetro, centros de soportes, centros de rodamientos y cotas del eje;
-- registrar `Coincide`, `Corregir`, `No coincide` o `No medido`;
-- bloquear el overlay rígido hasta validar las cotas críticas.
+## Integrado en esta rama
 
-Este MVP todavía no incorpora cámara ni superposición 3D. Es la primera interfaz funcional del motor lógico.
+- sesiones persistentes de captura en `capture_sessions.db`;
+- Camera2 con preview y JPEG de resolución completa;
+- orientación e IMU vinculadas al instante del disparo;
+- cobertura guiada en 12 sectores y dos alturas;
+- control local de desenfoque, exposición y movimiento;
+- almacenamiento de metadatos y SHA-256 por fotografía;
+- conocimiento técnico separado en `pulley_knowledge.db`;
+- validación y corrección humana de cotas;
+- parche idempotente con evidencia auditada de OT-781 y OT-867.
+
+## Todavía no implementado
+
+- poses multivista robustas;
+- nube de puntos real;
+- escala fotogramétrica y error de reproyección;
+- detección automática de manto, eje y soportes;
+- overlay STEP.
+
+La aplicación no declara reconstrucción 3D mientras esos resultados no existan y no estén cuantificados.
 
 ## Compilar
 
@@ -22,15 +36,13 @@ APK esperada:
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Artefacto validado
+## Pruebas puras
 
-La versión `0.1.0-mvp` fue compilada y firmada como APK de pruebas. Se verificó:
+```bash
+bash tools/run_capture_core_v26_tests.sh
+```
 
-- paquete `cl.skm.pulleyai`;
-- actividad `cl.skm.pulleyai.MainActivity`;
-- `minSdk 23`, `targetSdk 28`;
-- DEX parseable;
-- firma SHA-256/RSA válida;
-- SHA-256 del APK: `00227ff6f5822bc82f33609c0be7b0d1eca47d9194046943737b23657c3bcc7c`.
+## Documentación
 
-No se realizó todavía una prueba de instalación en hardware físico desde esta sesión.
+- `../PRODUCT_ROADMAP.md`
+- `QUALITY_ARCHIVE_AUDIT.md`

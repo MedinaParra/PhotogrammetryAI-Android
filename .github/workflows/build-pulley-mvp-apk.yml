@@ -1,10 +1,11 @@
-name: Build SKM Polea AI MVP APK
+name: Build SKM Polea AI product APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - agent/core-step-tracking-foundation
+      - product/single-device-photogrammetry-v1
     paths:
       - 'PulleyKnowledgeMvp/**'
       - '.github/workflows/build-pulley-mvp-apk.yml'
@@ -19,35 +20,32 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
+      - name: Test pure capture core
+        run: bash PulleyKnowledgeMvp/tools/run_capture_core_v26_tests.sh
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
       - name: Build debug APK
         run: gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace
-
       - name: Prepare artifact
         run: |
           mkdir -p artifacts
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-MVP.apk
-          sha256sum artifacts/SKM-Polea-AI-MVP.apk | tee artifacts/SHA256SUMS.txt
-
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-alpha.apk
+          sha256sum artifacts/SKM-Polea-AI-alpha.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-MVP
+          name: SKM-Polea-AI-alpha
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
