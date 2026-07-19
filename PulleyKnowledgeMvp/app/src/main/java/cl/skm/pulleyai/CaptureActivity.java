@@ -303,7 +303,9 @@ public final class CaptureActivity extends Activity {
         coverage.setText(session.label + "\nAceptadas " + session.accepted + " · rechazadas " + session.rejected
                 + "\nEje " + CoveragePlanner.coveredCount(session.lowMask) + "/12 · alta "
                 + CoveragePlanner.coveredCount(session.highMask) + "/12"
-                + "\nSiguiente: " + CoveragePlanner.sectorLabel(next));
+                + "\nSiguiente: " + CoveragePlanner.sectorLabel(next)
+                + "\nSolape: " + session.overlapStatus
+                + (session.overlapUpdatedAt == null ? "" : " · pares " + session.overlapUsablePairs));
         poseHint.setText(stability.reason + String.format(Locale.ROOT,
                 " · movimiento %.2f rad/s", pose.motion));
         poseHint.setTextColor(stability.ready()
@@ -324,7 +326,7 @@ public final class CaptureActivity extends Activity {
         if (session == null) return;
         CaptureReadiness.Result readiness = CaptureReadiness.evaluate(
                 session.accepted, session.rejected, session.lowMask, session.highMask,
-                session.shellLengthMm, freeBytes());
+                session.shellLengthMm, freeBytes(), true, session.overlapReady, session.overlapStatus);
         new AlertDialog.Builder(this)
                 .setTitle(readiness.ready() ? "Recorrido listo" : "Recorrido incompleto")
                 .setMessage(readiness.summary()
