@@ -18,13 +18,19 @@ public interface MaterialKnowledgeStore extends MaterialKnowledgeCatalog {
     /** Inserts or merges a family and all its source-linked evidence atomically. */
     void upsertFamily(MaterialFamily family);
 
-    /** Replaces the database with a trusted versioned package, normally the bundled seed. */
+    /** Replaces the trusted knowledge package while preserving field-identification audits. */
     void replaceAll(MaterialPulleyKnowledgeBase knowledgeBase);
 
     /** Saves the query, ranked candidates and final decision for traceability and later learning. */
     void saveIdentificationAudit(IdentificationAudit audit);
 
-    Optional<IdentificationAudit> findIdentificationAudit(String sessionId);
+    default Optional<IdentificationAudit> findIdentificationAudit(String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty()) return Optional.empty();
+        for (IdentificationAudit audit : recentIdentificationAudits(1000)) {
+            if (audit.sessionId().equals(sessionId.trim())) return Optional.of(audit);
+        }
+        return Optional.empty();
+    }
 
     List<IdentificationAudit> recentIdentificationAudits(int limit);
 }
