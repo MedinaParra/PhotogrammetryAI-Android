@@ -37,7 +37,6 @@ public final class InMemoryMaterialKnowledgeStore implements MaterialKnowledgeSt
     public synchronized void replaceAll(MaterialPulleyKnowledgeBase knowledgeBase) {
         families.clear();
         for (MaterialFamily family : knowledgeBase.families()) families.put(family.materialCode(), family);
-        audits.clear();
     }
 
     @Override
@@ -45,6 +44,15 @@ public final class InMemoryMaterialKnowledgeStore implements MaterialKnowledgeSt
         audits.removeIf(existing -> existing.sessionId().equals(audit.sessionId()));
         audits.add(audit);
         audits.sort(Comparator.comparingLong(IdentificationAudit::createdAtEpochMs).reversed());
+    }
+
+    @Override
+    public synchronized Optional<IdentificationAudit> findIdentificationAudit(String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty()) return Optional.empty();
+        for (IdentificationAudit audit : audits) {
+            if (audit.sessionId().equals(sessionId.trim())) return Optional.of(audit);
+        }
+        return Optional.empty();
     }
 
     @Override
