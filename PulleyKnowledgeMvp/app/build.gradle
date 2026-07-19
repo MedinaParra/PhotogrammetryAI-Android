@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai'
         minSdk 24
         targetSdk 35
-        versionCode 8
-        versionName '0.7.0-alpha8'
+        versionCode 9
+        versionName '0.8.0-alpha9'
     }
 
     compileOptions {
