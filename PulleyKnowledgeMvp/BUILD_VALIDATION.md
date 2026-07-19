@@ -1,4 +1,4 @@
-# Validación portátil — 0.2.0-alpha2
+# Validación portátil — 0.2.0-alpha3
 
 ## Código verificado
 
@@ -12,11 +12,11 @@
 ## Artefacto
 
 - paquete: `cl.skm.pulleyai`;
-- versión: `0.2.0-alpha2` (`versionCode 3`);
+- versión: `0.2.0-alpha3` (`versionCode 4`);
 - `minSdk 24`;
 - `targetSdk 35`;
 - launcher: `cl.skm.pulleyai.LauncherActivity`;
-- SHA-256: `5adf26de896af487deda6a86c1f849146e642d1989e447ba0eed01a6fff505fc`.
+- SHA-256: `b4c0d59b85716ffc58cec2fe50019d20d0df76cb37b29c5262022bcb97c486be`.
 
 ## Funciones integradas
 
@@ -28,7 +28,7 @@
 - rechazo explicado por desenfoque, luz o movimiento;
 - persistencia de fotografía, metadatos y SHA-256;
 - motor SQLite de conocimiento y validación dimensional;
-- evidencia auditada inicial de OT-781 y OT-867;
+- evidencia auditada de OT-781, OT-867, OT-270 y OT-343;
 - resolución matemática de escala y selección de pares disponible como núcleo v0.27.
 
 ## Límites
