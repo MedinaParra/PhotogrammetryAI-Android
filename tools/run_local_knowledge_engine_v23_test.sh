@@ -21,6 +21,11 @@ javac -encoding UTF-8 -d "$OUT_DIR" \
   "$SRC/QualityKnowledgeIngestionService.java" \
   "$SRC/DriveQualityKnowledgeSeed.java" \
   "$SRC/PulleyMaterialIdentificationEngine.java" \
+  "$SRC/PulleyDimensionReview.java" \
+  "$SRC/PulleyDimensionSuggestionEngine.java" \
+  "$SRC/DimensionReviewStore.java" \
+  "$SRC/InMemoryDimensionReviewStore.java" \
+  "$SRC/PostIdentificationDimensionReviewService.java" \
   "$SRC/LocalPulleyKnowledgeEngine.java" \
   "$SRC/sqlite/SqlitePulleyKnowledgeSchema.java" \
   "$SRC/sqlite/TextListCodec.java" \
