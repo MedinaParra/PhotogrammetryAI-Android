@@ -1,4 +1,5 @@
 import cl.ingenieria.photogrammetryai.core.materialhistory.DriveQualityKnowledgeSeed;
+import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialCodeInput;
 import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialPulleyKnowledgeBase;
 import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialPulleyKnowledgeBase.DimensionKind;
 import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialPulleyKnowledgeBase.MaterialFamily;
@@ -16,8 +17,12 @@ public final class MaterialHistoryV22Test {
     public static void main(String[] args) {
         MaterialPulleyKnowledgeBase knowledge = DriveQualityKnowledgeSeed.create();
         require(knowledge.size() >= 8, "Expected seeded material families");
+        require(MaterialCodeInput.normalize("SC 10415863").equals("10415863"),
+                "SC prefix normalisation");
+        require(MaterialCodeInput.normalize("Código de Material: 10415863").equals("10415863"),
+                "material-code label normalisation");
 
-        MaterialFamily family10415863 = knowledge.findByMaterialCode("SC 10415863")
+        MaterialFamily family10415863 = knowledge.findByMaterialCode("10415863")
                 .orElseThrow(() -> new AssertionError("10415863 missing"));
         require(family10415863.ots().contains("OT-262"), "OT-262 reverse history missing");
         require(family10415863.ots().contains("OT-1702"), "OT-1702 reverse history missing");
@@ -38,7 +43,7 @@ public final class MaterialHistoryV22Test {
 
         Candidate exact = engine.identify(new Query(
                 1520.0,
-                "10415863",
+                MaterialCodeInput.normalize("SC 10415863"),
                 "OT-1702",
                 1400.0,
                 "POLEA BP LORBRAND BP5MSCP00273",
@@ -77,7 +82,7 @@ public final class MaterialHistoryV22Test {
         require(noLength.action() == Action.HISTORICAL_FAMILY_NO_LENGTH,
                 "Exact code without historical length should preserve family");
 
-        Candidate drawing = engine.identify(Query.byMaterialCode("4162054", 2032.0), 3)
+        Candidate drawing = engine.identify(MaterialCodeInput.query("SAP 4162054", 2032.0), 3)
                 .best()
                 .orElseThrow(() -> new AssertionError("No drawing candidate"));
         require(drawing.family().materialCode().equals("4162054"), "Wrong drawing family");
@@ -111,6 +116,8 @@ public final class MaterialHistoryV22Test {
         require(parsed.ot().orElse("").equals("OT-262"), "Parser OT");
         require(parsed.year().orElse(0) == 2018, "Parser year");
         require(parsed.client().orElse("").equals("Minera Spence"), "Parser client");
+        require(parsed.phase() == MaterialPulleyKnowledgeBase.ReportPhase.EVALUATION,
+                "Parser report phase");
         require(parsed.firstDimensionMm(DimensionKind.SHELL_LENGTH).orElse(0.0) == 1520.0,
                 "Parser shell length");
         require(parsed.firstDimensionMm(DimensionKind.SHELL_DIAMETER).orElse(0.0) == 1400.0,
