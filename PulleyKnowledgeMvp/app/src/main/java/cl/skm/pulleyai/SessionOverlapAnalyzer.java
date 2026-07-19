@@ -65,6 +65,7 @@ public final class SessionOverlapAnalyzer {
         try (FileOutputStream stream = new FileOutputStream(output)) {
             stream.write(report.toJson().getBytes(StandardCharsets.UTF_8));
         }
+        store.saveOverlapResult(sessionId, graph.status, ready, usable, graph.components);
         return report;
     }
 
