@@ -116,9 +116,9 @@ public final class MaterialFamilyMerge {
         }
     }
 
+    /** URI is intentionally excluded: identical reports copied to another Drive folder remain one source. */
     private static String sourceSignature(SourceDocument source) {
         return normalized(source.title())
-                + '|' + normalized(source.uri())
                 + '|' + source.phase().name()
                 + '|' + source.ot().orElse("")
                 + '|' + source.materialCode().orElse("")
