@@ -1,5 +1,7 @@
 import cl.ingenieria.photogrammetryai.core.foundation.CoreMath.RigidPose;
 import cl.ingenieria.photogrammetryai.core.foundation.CoreMath.Vec3;
+import cl.ingenieria.photogrammetryai.core.fewview.AxisConstrainedPulleyEstimator;
+import cl.ingenieria.photogrammetryai.core.fewview.AxisConstrainedPulleyEstimator.PulleyCylinder;
 import cl.ingenieria.photogrammetryai.core.fewview.FewViewBaselineSelector;
 import cl.ingenieria.photogrammetryai.core.fewview.FewViewBaselineSelector.ViewPairScore;
 import cl.ingenieria.photogrammetryai.core.fewview.FewViewGeometry.CameraIntrinsics;
@@ -16,6 +18,7 @@ import cl.ingenieria.photogrammetryai.core.fewview.KnownPoseFewViewReconstructor
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 public final class FewViewReconstructionV18Test {
@@ -77,8 +80,7 @@ public final class FewViewReconstructionV18Test {
         require(report.points().size() == truth.size(), "All synthetic tracks should reconstruct");
         require(report.rejectedTrackCount() == 0, "Unexpected rejected synthetic tracks");
 
-        for (int index = 0; index < report.points().size(); index++) {
-            ReconstructedPoint reconstructed = report.points().get(index);
+        for (ReconstructedPoint reconstructed : report.points()) {
             Vec3 expected = truth.get(Integer.parseInt(reconstructed.trackId().substring(1)));
             double positionErrorMm = reconstructed.worldPointMm().distanceTo(expected);
             require(positionErrorMm < 2.5,
@@ -98,6 +100,7 @@ public final class FewViewReconstructionV18Test {
 
         testLowParallaxRejection(intrinsics, reconstructor);
         testTrackBuilder();
+        testAxisConstrainedCylinder();
 
         System.out.println("FewViewReconstructionV18Test OK");
         System.out.println("points=" + report.points().size()
@@ -155,6 +158,52 @@ public final class FewViewReconstructionV18Test {
         require(report.tracks().size() == 1, "Expected one valid three-view track");
         require(report.tracks().get(0).observations().size() == 3,
                 "Expected A-B-C observations in valid track");
+    }
+
+    private static void testAxisConstrainedCylinder() {
+        Vec3 origin = new Vec3(0.0, 0.0, 2000.0);
+        Vec3 axis = Vec3.X;
+        double expectedRadius = 500.0;
+        double expectedLength = 1500.0;
+        List<ReconstructedPoint> points = new ArrayList<>();
+        LinkedHashSet<String> viewIds = new LinkedHashSet<>(Arrays.asList("A", "B", "C"));
+
+        for (int index = 0; index < 40; index++) {
+            double axial = -expectedLength * 0.5 + expectedLength * index / 39.0;
+            double angle = 2.0 * Math.PI * (index % 10) / 10.0;
+            double radialNoise = ((index * 7) % 9 - 4) * 0.16;
+            if (index == 5 || index == 31) {
+                radialNoise += 55.0;
+            }
+            double radius = expectedRadius + radialNoise;
+            Vec3 point = origin
+                    .add(axis.scale(axial))
+                    .add(Vec3.Y.scale(radius * Math.cos(angle)))
+                    .add(Vec3.Z.scale(radius * Math.sin(angle)));
+            points.add(new ReconstructedPoint(
+                    "shell_" + index,
+                    point,
+                    viewIds,
+                    0.35,
+                    0.70,
+                    16.0,
+                    0.95
+            ));
+        }
+
+        AxisConstrainedPulleyEstimator estimator = new AxisConstrainedPulleyEstimator(
+                AxisConstrainedPulleyEstimator.Config.mobileDefaults()
+        );
+        PulleyCylinder cylinder = estimator.estimate(origin, axis, points)
+                .orElseThrow(() -> new AssertionError("Expected pulley cylinder estimate"));
+        require(Math.abs(cylinder.radiusMm() - expectedRadius) < 1.0,
+                "Pulley radius error too high: " + cylinder.radiusMm());
+        require(Math.abs(cylinder.lengthMm() - expectedLength) < 80.0,
+                "Pulley length error too high: " + cylinder.lengthMm());
+        require(cylinder.radialRmsMm() < 1.0,
+                "Pulley radial RMS too high: " + cylinder.radialRmsMm());
+        require(cylinder.inlierPointCount() == 38,
+                "Expected two radial outliers to be rejected");
     }
 
     private static PairMatch match(
