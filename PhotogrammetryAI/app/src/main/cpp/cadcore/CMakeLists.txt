@@ -8,7 +8,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(PGAI_REQUIRE_OCCT "Fail configuration when OpenCASCADE is unavailable" OFF)
 set(
     PGAI_OCCT_ROOT
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../../..//third-party/opencascade/${ANDROID_ABI}"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../../../third-party/opencascade/${ANDROID_ABI}"
     CACHE PATH
     "OpenCASCADE installation root for the current Android ABI"
 )
