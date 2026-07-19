@@ -1,19 +1,22 @@
 package cl.ingenieria.photogrammetryai.core.materialhistory;
 
 import cl.ingenieria.photogrammetryai.core.materialhistory.IdentificationAudit.RankedCandidate;
+import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialPulleyKnowledgeBase.DimensionKind;
+import cl.ingenieria.photogrammetryai.core.materialhistory.PulleyDimensionReview.ResponseStatus;
 import cl.ingenieria.photogrammetryai.core.materialhistory.PulleyMaterialIdentificationEngine.Action;
 import cl.ingenieria.photogrammetryai.core.materialhistory.PulleyMaterialIdentificationEngine.Candidate;
 import cl.ingenieria.photogrammetryai.core.materialhistory.PulleyMaterialIdentificationEngine.Query;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Application service coordinating seed installation, report ingestion, identification and audit.
- * This is the main logical entrypoint that the future Android GUI will call.
+ * Application service coordinating seed installation, report ingestion, identification, dimensional
+ * validation and audit. This is the main logical entrypoint that the future Android GUI will call.
  */
 public final class LocalPulleyKnowledgeEngine {
     public interface EpochClock {
@@ -27,17 +30,23 @@ public final class LocalPulleyKnowledgeEngine {
     public static final class IdentificationOutcome {
         private final String sessionId;
         private final PulleyMaterialIdentificationEngine.Result result;
+        private final PulleyDimensionReview dimensionReview;
 
         private IdentificationOutcome(
                 String sessionId,
-                PulleyMaterialIdentificationEngine.Result result
+                PulleyMaterialIdentificationEngine.Result result,
+                PulleyDimensionReview dimensionReview
         ) {
             this.sessionId = sessionId;
             this.result = result;
+            this.dimensionReview = dimensionReview;
         }
 
         public String sessionId() { return sessionId; }
         public PulleyMaterialIdentificationEngine.Result result() { return result; }
+        public Optional<PulleyDimensionReview> dimensionReview() {
+            return Optional.ofNullable(dimensionReview);
+        }
     }
 
     private final MaterialKnowledgeStore store;
@@ -45,10 +54,20 @@ public final class LocalPulleyKnowledgeEngine {
     private final PulleyMaterialIdentificationEngine.Config identificationConfig;
     private final EpochClock clock;
     private final SessionIdGenerator ids;
+    private final PostIdentificationDimensionReviewService dimensionReviews;
 
     public LocalPulleyKnowledgeEngine(MaterialKnowledgeStore store) {
+        this(store, new InMemoryDimensionReviewStore());
+    }
+
+    /** Production Android should pass AndroidSqliteDimensionReviewStore here. */
+    public LocalPulleyKnowledgeEngine(
+            MaterialKnowledgeStore store,
+            DimensionReviewStore dimensionReviewStore
+    ) {
         this(
                 store,
+                dimensionReviewStore,
                 new QualityReportTextParser(),
                 PulleyMaterialIdentificationEngine.Config.industrialDefaults(),
                 System::currentTimeMillis,
@@ -56,8 +75,27 @@ public final class LocalPulleyKnowledgeEngine {
         );
     }
 
+    /** Backward-compatible pure-Java constructor. */
     public LocalPulleyKnowledgeEngine(
             MaterialKnowledgeStore store,
+            QualityReportTextParser parser,
+            PulleyMaterialIdentificationEngine.Config identificationConfig,
+            EpochClock clock,
+            SessionIdGenerator ids
+    ) {
+        this(
+                store,
+                new InMemoryDimensionReviewStore(),
+                parser,
+                identificationConfig,
+                clock,
+                ids
+        );
+    }
+
+    public LocalPulleyKnowledgeEngine(
+            MaterialKnowledgeStore store,
+            DimensionReviewStore dimensionReviewStore,
             QualityReportTextParser parser,
             PulleyMaterialIdentificationEngine.Config identificationConfig,
             EpochClock clock,
@@ -74,6 +112,11 @@ public final class LocalPulleyKnowledgeEngine {
         );
         this.clock = Objects.requireNonNull(clock, "clock");
         this.ids = Objects.requireNonNull(ids, "ids");
+        this.dimensionReviews = new PostIdentificationDimensionReviewService(
+                store,
+                Objects.requireNonNull(dimensionReviewStore, "dimensionReviewStore"),
+                clock::nowEpochMs
+        );
     }
 
     /** Installs the bundled verified seed only when the local database is empty. */
@@ -99,8 +142,8 @@ public final class LocalPulleyKnowledgeEngine {
     }
 
     /**
-     * Identifies candidates and persists the complete decision trace before returning.
-     * Shell length remains mandatory because Query rejects zero or missing values.
+     * Identifies candidates, persists the decision trace and creates the next guided dimensional
+     * questions. Shell length remains mandatory because Query rejects zero or missing values.
      */
     public synchronized IdentificationOutcome identify(Query query, int limit) {
         Objects.requireNonNull(query, "query");
@@ -111,8 +154,41 @@ public final class LocalPulleyKnowledgeEngine {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             throw new IllegalStateException("SessionIdGenerator returned a blank id");
         }
-        store.saveIdentificationAudit(toAudit(sessionId.trim(), query, result, false, null));
-        return new IdentificationOutcome(sessionId.trim(), result);
+        String normalizedSessionId = sessionId.trim();
+        store.saveIdentificationAudit(toAudit(normalizedSessionId, query, result, false, null));
+
+        PulleyDimensionReview review = null;
+        Optional<Candidate> best = result.best();
+        if (best.isPresent() && best.get().action() != Action.NO_MATCH) {
+            review = dimensionReviews.create(
+                    normalizedSessionId,
+                    best.get().family().materialCode(),
+                    best.get().action(),
+                    query
+            );
+        }
+        return new IdentificationOutcome(normalizedSessionId, result, review);
+    }
+
+    /** Saves an answer to one suggested dimension and recalculates overlay readiness. */
+    public synchronized PulleyDimensionReview answerDimension(
+            String sessionId,
+            DimensionKind kind,
+            ResponseStatus status,
+            Double measuredValueMm,
+            String note
+    ) {
+        return dimensionReviews.answer(
+                sessionId,
+                kind,
+                status,
+                measuredValueMm,
+                note
+        );
+    }
+
+    public synchronized Optional<PulleyDimensionReview> findDimensionReview(String sessionId) {
+        return dimensionReviews.find(sessionId);
     }
 
     /**
@@ -154,6 +230,21 @@ public final class LocalPulleyKnowledgeEngine {
                 previous.candidates()
         );
         store.saveIdentificationAudit(confirmed);
+
+        Query reviewQuery = new Query(
+                previous.shellLengthMm(),
+                previous.enteredMaterialCode().orElse(null),
+                previous.enteredOt().orElse(null),
+                previous.measuredShellDiameterMm().orElse(null),
+                previous.description(),
+                Collections.emptySet()
+        );
+        dimensionReviews.create(
+                previous.sessionId(),
+                normalizedCode,
+                decision,
+                reviewQuery
+        );
         return confirmed;
     }
 
