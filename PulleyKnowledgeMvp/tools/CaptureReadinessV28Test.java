@@ -7,6 +7,10 @@ public final class CaptureReadinessV28Test {
                 36, 4, CoveragePlanner.COMPLETE_MASK, CoveragePlanner.COMPLETE_MASK,
                 1520.0, 1024L * 1024L * 1024L);
         if (!ready.ready()) throw new AssertionError(ready.summary());
+        CaptureReadiness.Result strictBlocked = CaptureReadiness.evaluate(
+                36, 4, CoveragePlanner.COMPLETE_MASK, CoveragePlanner.COMPLETE_MASK,
+                1520.0, 1024L * 1024L * 1024L, true, false, "STALE");
+        if (strictBlocked.ready()) throw new AssertionError("Strict gate must require overlap");
 
         CaptureReadiness.Result blocked = CaptureReadiness.evaluate(18, 20, 3, 0, null, 10L);
         if (blocked.ready()) throw new AssertionError("Incomplete session must be blocked");
