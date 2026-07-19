@@ -6,7 +6,6 @@ import cl.ingenieria.photogrammetryai.core.materialhistory.MaterialPulleyKnowled
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,7 +50,8 @@ public final class QualityReportTextParser {
         ));
         patterns.put(DimensionKind.SHELL_THICKNESS, patterns(
                 "Espesor\\s+del\\s+Manto(?:\\s+[A-Z])?\\s*[:=]?\\s*([0-9.,]+)\\s*mm",
-                "espesor(?:es)?[^\\n]{0,50}?([0-9.,]+)\\s*mm"
+                "(?:medici[oó]n\\s+de\\s+espesores|espesores\\s+del\\s+manto)"
+                        + "[^\\n]{0,120}?([0-9.,]+)\\s*mm"
         ));
         patterns.put(DimensionKind.LAGGING_THICKNESS, patterns(
                 "Espesor\\s+del\\s+Revestimiento(?:\\s+[A-Z])?\\s*[:=]?\\s*([0-9.,]+)\\s*mm"
@@ -164,7 +164,7 @@ public final class QualityReportTextParser {
         String client = cleanLine(matchFirst(CLIENT, content));
         String component = cleanLine(matchFirst(COMPONENT, content));
         String purchaseOrder = trimIdentifier(matchFirst(PURCHASE_ORDER, combined));
-        ReportPhase phase = detectPhase(combined);
+        ReportPhase phase = detectPhase(title, content);
 
         Map<DimensionKind, List<Double>> dimensions = new EnumMap<>(DimensionKind.class);
         for (Map.Entry<DimensionKind, List<Pattern>> entry : DIMENSION_PATTERNS.entrySet()) {
@@ -226,27 +226,38 @@ public final class QualityReportTextParser {
         return parsed;
     }
 
-    private static ReportPhase detectPhase(String combined) {
-        String value = combined.toUpperCase(Locale.ROOT);
-        if (value.contains("INFORME DE RECEPCI") || value.contains("RECEPCIÓN")) {
-            return ReportPhase.RECEIPT;
+    private static ReportPhase detectPhase(String title, String content) {
+        String titleUpper = title.toUpperCase(Locale.ROOT);
+        String value = (title + "\n" + firstLines(content, 24)).toUpperCase(Locale.ROOT);
+        if (titleUpper.contains("WIP")) return ReportPhase.WIP;
+        if (titleUpper.contains("PLANO") || titleUpper.endsWith(".SLDDRW")) {
+            return ReportPhase.DRAWING;
         }
         if (value.contains("INFORME DE HALLAZGO")) return ReportPhase.FINDINGS;
         if (value.contains("INFORME DE EVALUACI") || value.contains("EVALUACIÓN X")) {
             return ReportPhase.EVALUATION;
         }
+        if (value.contains("INFORME DE RECEPCI")) return ReportPhase.RECEIPT;
         if (value.contains("PRESERVACIÓN X") || value.contains("PRESERVACION X")) {
             return ReportPhase.PRESERVATION;
         }
-        if (value.contains("INFORME FINAL") || value.contains("ARMADO")) {
+        if (value.contains("INFORME FINAL") || titleUpper.contains("ARMADO")) {
             return ReportPhase.ASSEMBLY;
         }
-        if (value.contains("PLANO") || value.endsWith(".SLDDRW")) return ReportPhase.DRAWING;
-        if (value.contains("WIP")) return ReportPhase.WIP;
         if (value.contains("REPARACIÓN X") || value.contains("REPARACION X")) {
             return ReportPhase.REPAIR;
         }
         return ReportPhase.OTHER;
+    }
+
+    private static String firstLines(String content, int maximumLines) {
+        String[] lines = content.split("\\R");
+        StringBuilder builder = new StringBuilder();
+        int count = Math.min(lines.length, maximumLines);
+        for (int index = 0; index < count; index++) {
+            builder.append(lines[index]).append('\n');
+        }
+        return builder.toString();
     }
 
     private static Integer extractYear(String rawOt, String content) {
