@@ -60,8 +60,8 @@ if [[ ! -f "$INSTALL_DIR/include/opencascade/Standard.hxx" ]]; then
 fi
 
 required_libraries=(
-  TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKTopAlgo TKMesh
-  TKXSBase TKSTEPBase TKSTEPAttr TKSTEP209 TKSTEP
+  TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo
+  TKPrim TKBO TKMesh TKXSBase TKSTEPBase TKSTEPAttr TKSTEP209 TKSTEP
 )
 for library in "${required_libraries[@]}"; do
   if [[ ! -f "$INSTALL_DIR/lib/lib${library}.so" ]]; then
