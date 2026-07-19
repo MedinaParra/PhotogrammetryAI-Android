@@ -44,10 +44,12 @@ fi
 cp "$CADCORE_LIBRARY" "$OUTPUT_DIR/"
 find "$OCCT_ROOT/lib" -maxdepth 1 -name '*.so' -exec cp '{}' "$OUTPUT_DIR/" ';'
 
-CXX_SHARED="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt"
-CXX_LIBRARY="$(find "$CXX_SHARED" -path "*/sysroot/usr/lib/${ANDROID_ABI}/libc++_shared.so" -print -quit || true)"
-if [[ -n "$CXX_LIBRARY" ]]; then
-  cp "$CXX_LIBRARY" "$OUTPUT_DIR/"
+CXX_SHARED_ROOT="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt"
+CXX_LIBRARY="$(find "$CXX_SHARED_ROOT" -type f -name 'libc++_shared.so' -print -quit || true)"
+if [[ -z "$CXX_LIBRARY" ]]; then
+  echo "Unable to locate libc++_shared.so inside the Android NDK." >&2
+  exit 1
 fi
+cp "$CXX_LIBRARY" "$OUTPUT_DIR/"
 
 echo "cadcore JNI and OCCT libraries copied to: $OUTPUT_DIR"
