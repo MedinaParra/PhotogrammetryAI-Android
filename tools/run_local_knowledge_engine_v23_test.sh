@@ -16,6 +16,7 @@ javac -encoding UTF-8 -d "$OUT_DIR" \
   "$SRC/MaterialFamilyMerge.java" \
   "$SRC/InMemoryMaterialKnowledgeStore.java" \
   "$SRC/MaterialCodeInput.java" \
+  "$SRC/PulleyIdentificationRequest.java" \
   "$SRC/QualityReportTextParser.java" \
   "$SRC/QualityKnowledgeIngestionService.java" \
   "$SRC/DriveQualityKnowledgeSeed.java" \
