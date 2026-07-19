@@ -9,12 +9,15 @@ on:
     paths:
       - 'PhotogrammetryAI/app/src/main/java/cl/ingenieria/photogrammetryai/core/foundation/**'
       - 'PhotogrammetryAI/app/src/main/java/cl/ingenieria/photogrammetryai/core/fewview/**'
+      - 'PhotogrammetryAI/app/src/main/java/cl/ingenieria/photogrammetryai/core/pulleyknowledge/**'
       - 'tools/CoreFoundationV16Test.java'
       - 'tools/StepImportMapperV17Test.java'
       - 'tools/FewViewReconstructionV18Test.java'
+      - 'tools/PulleyKnowledgeV21Test.java'
       - 'tools/run_core_foundation_v16_test.sh'
       - 'tools/run_step_import_v17_test.sh'
       - 'tools/run_few_view_v18_test.sh'
+      - 'tools/run_pulley_knowledge_v21_test.sh'
       - '.github/workflows/core-foundation.yml'
 
 permissions:
@@ -49,17 +52,23 @@ jobs:
           bash tools/run_few_view_v18_test.sh > .ci-logs/few-view-v18.log 2>&1
           FEW_VIEW_EXIT=$?
 
+          bash tools/run_pulley_knowledge_v21_test.sh > .ci-logs/pulley-knowledge-v21.log 2>&1
+          PULLEY_KB_EXIT=$?
+
           echo '===== core-v16.log ====='
           cat .ci-logs/core-v16.log
           echo '===== step-v17.log ====='
           cat .ci-logs/step-v17.log
           echo '===== few-view-v18.log ====='
           cat .ci-logs/few-view-v18.log
+          echo '===== pulley-knowledge-v21.log ====='
+          cat .ci-logs/pulley-knowledge-v21.log
 
           if [ "$CORE_EXIT" -ne 0 ] \
               || [ "$STEP_EXIT" -ne 0 ] \
-              || [ "$FEW_VIEW_EXIT" -ne 0 ]; then
-            echo "Core test exits: v16=$CORE_EXIT v17=$STEP_EXIT v18=$FEW_VIEW_EXIT"
+              || [ "$FEW_VIEW_EXIT" -ne 0 ] \
+              || [ "$PULLEY_KB_EXIT" -ne 0 ]; then
+            echo "Core test exits: v16=$CORE_EXIT v17=$STEP_EXIT v18=$FEW_VIEW_EXIT v21=$PULLEY_KB_EXIT"
             exit 1
           fi
 
