@@ -12,117 +12,121 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Computes calibrated relative poses, a multiview graph and an auditable overlap report. */
+/** Calibrated two-view analysis, pose-graph qualification and auditable reporting. */
 public final class SessionOverlapAnalyzer {
     private SessionOverlapAnalyzer() {
     }
 
+    /** Compatibility entry point retained while capture storage is refactored behind a repository. */
+    public static Report analyze(CaptureStore store, String sessionId) throws Exception {
+        return analyze(CaptureStoreContextResolver.resolve(store), store, sessionId);
+    }
+
     public static Report analyze(Context context, CaptureStore store, String sessionId) throws Exception {
-        CameraIntrinsicsProvider intrinsicsProvider = new CameraIntrinsicsProvider(context);
-        List<CaptureStore.Frame> all = store.frames(sessionId);
-        List<CachedFrame> accepted = new ArrayList<CachedFrame>();
-        for (CaptureStore.Frame frame : all) {
-            if (!"ACCEPTED".equals(frame.quality) || !new File(frame.filePath).isFile()) continue;
-            Gray gray = decode(frame.filePath);
-            VisualFeatureCore.FeatureSet features = VisualFeatureCore.detect(
-                    gray.pixels, gray.width, gray.height, 420);
-            CameraIntrinsicsProvider.Resolution intrinsics = intrinsicsProvider.resolve(
-                    frame, gray.width, gray.height);
-            accepted.add(new CachedFrame(frame, features, intrinsics));
+        CameraIntrinsicsProvider provider = context == null ? null : new CameraIntrinsicsProvider(context);
+        List<CachedFrame> frames = loadFrames(store, sessionId, provider);
+        List<ViewGraphCore.Node> nodes = new ArrayList<ViewGraphCore.Node>();
+        for (CachedFrame frame : frames) {
+            nodes.add(new ViewGraphCore.Node(frame.source.sequence, frame.source.band, frame.source.sector));
         }
 
-        List<Pair> pairs = new ArrayList<Pair>();
-        List<ViewGraphCore.Node> graphNodes = new ArrayList<ViewGraphCore.Node>();
-        for (CachedFrame cached : accepted) {
-            graphNodes.add(new ViewGraphCore.Node(
-                    cached.frame.sequence, cached.frame.band, cached.frame.sector));
-        }
-        List<ViewGraphCore.Edge> graphEdges = new ArrayList<ViewGraphCore.Edge>();
-        int poseStrong = 0;
-        int poseUsable = 0;
+        List<Pair> pairReports = new ArrayList<Pair>();
+        List<ViewGraphCore.Edge> edges = new ArrayList<ViewGraphCore.Edge>();
         int missingIntrinsics = 0;
-        for (CachedFrame cached : accepted) if (!cached.intrinsics.available) missingIntrinsics++;
+        int strong = 0;
+        int usable = 0;
+        for (CachedFrame frame : frames) if (!frame.intrinsics.available) missingIntrinsics++;
 
-        for (int i = 0; i < accepted.size(); i++) {
-            for (int j = i + 1; j < accepted.size(); j++) {
-                CachedFrame left = accepted.get(i);
-                CachedFrame right = accepted.get(j);
-                if (!candidate(left.frame, right.frame)) continue;
-                VisualFeatureCore.PairResult match = VisualFeatureCore.match(left.features, right.features);
-                List<FundamentalMatrixCore.PointPair> epipolarPairs = epipolarPairs(
-                        left.features, right.features, match);
-                int fundamentalIterations = Math.max(100, Math.min(220, epipolarPairs.size() * 2));
-                FundamentalMatrixCore.Result epipolar = FundamentalMatrixCore.estimate(
-                        epipolarPairs, 2.2, fundamentalIterations);
-
-                EssentialPoseCore.Result pose;
-                if (epipolar.solved && left.intrinsics.available && right.intrinsics.available) {
-                    pose = EssentialPoseCore.recover(epipolar.matrix, epipolarPairs,
-                            epipolar.inliers, left.intrinsics.intrinsics, right.intrinsics.intrinsics);
-                } else {
-                    pose = EssentialPoseCore.Result.failed(
-                            !epipolar.solved ? "FUNDAMENTAL_FAILED" : "INTRINSICS_UNAVAILABLE");
-                }
-
-                AffineRansacCore.Result affine = null;
-                if (!pose.solved || "WEAK".equals(pose.status)) {
-                    List<AffineRansacCore.PointPair> affinePairs = affinePairs(
-                            left.features, right.features, match);
-                    affine = AffineRansacCore.estimate(affinePairs, 3.5, 260);
-                }
-
-                boolean isStrong = pose.solved && "STRONG".equals(pose.status);
-                boolean isUsable = isStrong || (pose.solved && "USABLE".equals(pose.status));
-                String geometryModel = isUsable ? "ESSENTIAL_POSE"
-                        : epipolar.solved ? "EPIPOLAR_ONLY"
-                        : affine != null && affine.solved ? "AFFINE_DIAGNOSTIC"
-                        : "NO_GEOMETRY";
-                int inliers = isUsable ? epipolar.inliers.size()
-                        : affine == null ? epipolar.inliers.size() : affine.inliers.size();
-                double rms = isUsable ? epipolar.rmsPx
-                        : affine == null ? epipolar.rmsPx : affine.rmsPx;
-                double inlierRatio = isUsable ? epipolar.inlierRatio
-                        : affine == null ? epipolar.inlierRatio : affine.inlierRatio;
-                Pair pair = new Pair(left.frame.sequence, right.frame.sequence,
-                        left.frame.band, right.frame.band,
-                        left.frame.sector, right.frame.sector,
-                        left.features.features.size(), right.features.features.size(),
-                        match.matches.size(), inliers, match.medianDx, match.medianDy,
-                        rms, inlierRatio, geometryModel,
-                        affine == null || affine.model == null ? Double.NaN : affine.model.determinant(),
-                        pose.status, pose.rotationDegrees, pose.medianParallaxDegrees,
-                        pose.positiveRatio, pose.translation,
-                        isStrong ? "STRONG" : isUsable ? "USABLE" : "WEAK");
-                pairs.add(pair);
-                graphEdges.add(new ViewGraphCore.Edge(i, j, isUsable, isStrong));
-                if (isStrong) poseStrong++;
-                if (isUsable) poseUsable++;
+        for (int leftIndex = 0; leftIndex < frames.size(); leftIndex++) {
+            for (int rightIndex = leftIndex + 1; rightIndex < frames.size(); rightIndex++) {
+                CachedFrame left = frames.get(leftIndex);
+                CachedFrame right = frames.get(rightIndex);
+                if (!candidate(left.source, right.source)) continue;
+                Pair pair = solvePair(left, right);
+                pairReports.add(pair);
+                boolean edgeUsable = "STRONG".equals(pair.status) || "USABLE".equals(pair.status);
+                boolean edgeStrong = "STRONG".equals(pair.status);
+                edges.add(new ViewGraphCore.Edge(leftIndex, rightIndex, edgeUsable, edgeStrong));
+                if (edgeStrong) strong++;
+                if (edgeUsable) usable++;
             }
         }
 
-        ViewGraphCore.Result graph = ViewGraphCore.analyze(graphNodes, graphEdges);
-        int requiredPairs = Math.max(10, Math.min(30, accepted.size() / 2));
-        boolean ready = missingIntrinsics == 0
-                && poseUsable >= requiredPairs
-                && poseStrong >= Math.max(5, requiredPairs / 3)
-                && graph.ready;
+        ViewGraphCore.Result graph = ViewGraphCore.analyze(nodes, edges);
+        int required = Math.max(10, Math.min(30, frames.size() / 2));
+        boolean ready = missingIntrinsics == 0 && usable >= required
+                && strong >= Math.max(5, required / 3) && graph.ready;
         String persistedStatus = ready ? "POSE_READY"
-                : missingIntrinsics > 0 ? "INTRINSICS_MISSING"
-                : graph.status;
-        Report report = new Report(accepted.size(), pairs, poseStrong, poseUsable,
-                requiredPairs, missingIntrinsics, graph, ready);
+                : missingIntrinsics > 0 ? "INTRINSICS_MISSING" : graph.status;
+        Report report = new Report(frames.size(), pairReports, strong, usable,
+                required, missingIntrinsics, graph, ready);
         File output = new File(store.sessionDir(sessionId), "overlap_report.json");
         try (FileOutputStream stream = new FileOutputStream(output)) {
             stream.write(report.toJson().getBytes(StandardCharsets.UTF_8));
         }
-        store.saveOverlapResult(sessionId, persistedStatus, ready, poseUsable, graph.components);
+        store.saveOverlapResult(sessionId, persistedStatus, ready, usable, graph.components);
         return report;
     }
 
+    private static List<CachedFrame> loadFrames(CaptureStore store, String sessionId,
+                                                 CameraIntrinsicsProvider provider) {
+        List<CachedFrame> result = new ArrayList<CachedFrame>();
+        for (CaptureStore.Frame frame : store.frames(sessionId)) {
+            if (!"ACCEPTED".equals(frame.quality) || !new File(frame.filePath).isFile()) continue;
+            Gray gray = decode(frame.filePath);
+            VisualFeatureCore.FeatureSet features = VisualFeatureCore.detect(
+                    gray.pixels, gray.width, gray.height, 420);
+            CameraIntrinsicsProvider.Resolution intrinsics = provider == null
+                    ? CameraIntrinsicsProvider.Resolution.failed("CONTEXT_UNAVAILABLE")
+                    : provider.resolve(frame, gray.width, gray.height);
+            result.add(new CachedFrame(frame, features, intrinsics));
+        }
+        return result;
+    }
+
+    private static Pair solvePair(CachedFrame left, CachedFrame right) {
+        VisualFeatureCore.PairResult descriptorMatch = VisualFeatureCore.match(
+                left.features, right.features);
+        List<FundamentalMatrixCore.PointPair> imagePairs = imagePairs(
+                left.features, right.features, descriptorMatch);
+        FundamentalMatrixCore.Result fundamental = FundamentalMatrixCore.estimate(
+                imagePairs, 2.2, Math.max(100, Math.min(220, imagePairs.size() * 2)));
+
+        EssentialPoseCore.Result pose = fundamental.solved
+                && left.intrinsics.available && right.intrinsics.available
+                ? EssentialPoseCore.recover(fundamental.matrix, imagePairs, fundamental.inliers,
+                left.intrinsics.intrinsics, right.intrinsics.intrinsics)
+                : EssentialPoseCore.Result.failed(!fundamental.solved
+                ? "FUNDAMENTAL_FAILED" : "INTRINSICS_UNAVAILABLE");
+
+        AffineRansacCore.Result affine = null;
+        if (!pose.solved || "WEAK".equals(pose.status)) {
+            affine = AffineRansacCore.estimate(affinePairs(
+                    left.features, right.features, descriptorMatch), 3.5, 260);
+        }
+        boolean poseUsable = pose.solved
+                && ("STRONG".equals(pose.status) || "USABLE".equals(pose.status));
+        String model = poseUsable ? "ESSENTIAL_POSE"
+                : fundamental.solved ? "EPIPOLAR_ONLY"
+                : affine != null && affine.solved ? "AFFINE_DIAGNOSTIC" : "NO_GEOMETRY";
+        int inliers = poseUsable ? fundamental.inliers.size()
+                : affine != null ? affine.inliers.size() : fundamental.inliers.size();
+        double rms = poseUsable ? fundamental.rmsPx
+                : affine != null ? affine.rmsPx : fundamental.rmsPx;
+        double ratio = poseUsable ? fundamental.inlierRatio
+                : affine != null ? affine.inlierRatio : fundamental.inlierRatio;
+        return new Pair(left.source.sequence, right.source.sequence,
+                left.source.band, right.source.band, left.source.sector, right.source.sector,
+                descriptorMatch.matches.size(), inliers, rms, ratio, model,
+                pose.status, pose.rotationDegrees, pose.medianParallaxDegrees,
+                pose.positiveRatio, pose.translation,
+                poseUsable ? pose.status : "WEAK");
+    }
+
     private static boolean candidate(CaptureStore.Frame left, CaptureStore.Frame right) {
-        int sectorGap = circularGap(left.sector, right.sector);
-        if (left.band.equals(right.band)) return sectorGap >= 1 && sectorGap <= 2;
-        return sectorGap <= 1;
+        int gap = Math.abs(left.sector - right.sector);
+        gap = Math.min(gap, CoveragePlanner.SECTOR_COUNT - gap);
+        return left.band.equals(right.band) ? gap >= 1 && gap <= 2 : gap <= 1;
     }
 
     private static Gray decode(String path) {
@@ -130,8 +134,7 @@ public final class SessionOverlapAnalyzer {
         bounds.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(path, bounds);
         int sample = 1;
-        int max = Math.max(bounds.outWidth, bounds.outHeight);
-        while (max / sample > 640) sample *= 2;
+        while (Math.max(bounds.outWidth, bounds.outHeight) / sample > 640) sample *= 2;
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inSampleSize = Math.max(1, sample);
         options.inPreferredConfig = Bitmap.Config.ARGB_8888;
@@ -147,8 +150,7 @@ public final class SessionOverlapAnalyzer {
                 for (int x = 0; x < width; x++) {
                     int color = row[x];
                     gray[y * width + x] = (byte) Math.round(
-                            0.2126 * Color.red(color)
-                                    + 0.7152 * Color.green(color)
+                            0.2126 * Color.red(color) + 0.7152 * Color.green(color)
                                     + 0.0722 * Color.blue(color));
                 }
             }
@@ -158,33 +160,28 @@ public final class SessionOverlapAnalyzer {
         }
     }
 
+    private static List<FundamentalMatrixCore.PointPair> imagePairs(
+            VisualFeatureCore.FeatureSet left, VisualFeatureCore.FeatureSet right,
+            VisualFeatureCore.PairResult matches) {
+        List<FundamentalMatrixCore.PointPair> result = new ArrayList<FundamentalMatrixCore.PointPair>();
+        for (VisualFeatureCore.Match match : matches.matches) {
+            VisualFeatureCore.Feature a = left.features.get(match.leftIndex);
+            VisualFeatureCore.Feature b = right.features.get(match.rightIndex);
+            result.add(new FundamentalMatrixCore.PointPair(a.x, a.y, b.x, b.y));
+        }
+        return result;
+    }
+
     private static List<AffineRansacCore.PointPair> affinePairs(
             VisualFeatureCore.FeatureSet left, VisualFeatureCore.FeatureSet right,
             VisualFeatureCore.PairResult matches) {
-        List<AffineRansacCore.PointPair> pairs = new ArrayList<AffineRansacCore.PointPair>();
+        List<AffineRansacCore.PointPair> result = new ArrayList<AffineRansacCore.PointPair>();
         for (VisualFeatureCore.Match match : matches.matches) {
             VisualFeatureCore.Feature a = left.features.get(match.leftIndex);
             VisualFeatureCore.Feature b = right.features.get(match.rightIndex);
-            pairs.add(new AffineRansacCore.PointPair(a.x, a.y, b.x, b.y));
+            result.add(new AffineRansacCore.PointPair(a.x, a.y, b.x, b.y));
         }
-        return pairs;
-    }
-
-    private static List<FundamentalMatrixCore.PointPair> epipolarPairs(
-            VisualFeatureCore.FeatureSet left, VisualFeatureCore.FeatureSet right,
-            VisualFeatureCore.PairResult matches) {
-        List<FundamentalMatrixCore.PointPair> pairs = new ArrayList<FundamentalMatrixCore.PointPair>();
-        for (VisualFeatureCore.Match match : matches.matches) {
-            VisualFeatureCore.Feature a = left.features.get(match.leftIndex);
-            VisualFeatureCore.Feature b = right.features.get(match.rightIndex);
-            pairs.add(new FundamentalMatrixCore.PointPair(a.x, a.y, b.x, b.y));
-        }
-        return pairs;
-    }
-
-    private static int circularGap(int a, int b) {
-        int gap = Math.abs(a - b);
-        return Math.min(gap, CoveragePlanner.SECTOR_COUNT - gap);
+        return result;
     }
 
     private static final class Gray {
@@ -199,12 +196,12 @@ public final class SessionOverlapAnalyzer {
     }
 
     private static final class CachedFrame {
-        final CaptureStore.Frame frame;
+        final CaptureStore.Frame source;
         final VisualFeatureCore.FeatureSet features;
         final CameraIntrinsicsProvider.Resolution intrinsics;
-        CachedFrame(CaptureStore.Frame frame, VisualFeatureCore.FeatureSet features,
+        CachedFrame(CaptureStore.Frame source, VisualFeatureCore.FeatureSet features,
                     CameraIntrinsicsProvider.Resolution intrinsics) {
-            this.frame = frame;
+            this.source = source;
             this.features = features;
             this.intrinsics = intrinsics;
         }
@@ -217,16 +214,11 @@ public final class SessionOverlapAnalyzer {
         public final String rightBand;
         public final int leftSector;
         public final int rightSector;
-        public final int leftFeatures;
-        public final int rightFeatures;
-        public final int matches;
-        public final int geometryInliers;
-        public final double medianDx;
-        public final double medianDy;
-        public final double geometryRmsPx;
+        public final int rawMatches;
+        public final int inliers;
+        public final double rmsPx;
         public final double inlierRatio;
         public final String geometryModel;
-        public final double affineDeterminant;
         public final String poseStatus;
         public final double rotationDegrees;
         public final double parallaxDegrees;
@@ -235,11 +227,9 @@ public final class SessionOverlapAnalyzer {
         public final String status;
 
         Pair(int leftSequence, int rightSequence, String leftBand, String rightBand,
-             int leftSector, int rightSector, int leftFeatures, int rightFeatures,
-             int matches, int geometryInliers, double medianDx, double medianDy,
-             double geometryRmsPx, double inlierRatio, String geometryModel,
-             double affineDeterminant, String poseStatus, double rotationDegrees,
-             double parallaxDegrees, double positiveDepthRatio,
+             int leftSector, int rightSector, int rawMatches, int inliers,
+             double rmsPx, double inlierRatio, String geometryModel, String poseStatus,
+             double rotationDegrees, double parallaxDegrees, double positiveDepthRatio,
              double[] translationDirection, String status) {
             this.leftSequence = leftSequence;
             this.rightSequence = rightSequence;
@@ -247,16 +237,11 @@ public final class SessionOverlapAnalyzer {
             this.rightBand = rightBand;
             this.leftSector = leftSector;
             this.rightSector = rightSector;
-            this.leftFeatures = leftFeatures;
-            this.rightFeatures = rightFeatures;
-            this.matches = matches;
-            this.geometryInliers = geometryInliers;
-            this.medianDx = medianDx;
-            this.medianDy = medianDy;
-            this.geometryRmsPx = geometryRmsPx;
+            this.rawMatches = rawMatches;
+            this.inliers = inliers;
+            this.rmsPx = rmsPx;
             this.inlierRatio = inlierRatio;
             this.geometryModel = geometryModel;
-            this.affineDeterminant = affineDeterminant;
             this.poseStatus = poseStatus;
             this.rotationDegrees = rotationDegrees;
             this.parallaxDegrees = parallaxDegrees;
@@ -299,47 +284,33 @@ public final class SessionOverlapAnalyzer {
         }
 
         String toJson() {
-            StringBuilder json = new StringBuilder(4096 + pairs.size() * 420);
-            json.append("{\n  \"schema\": \"skm-polea-pose-graph/1\",\n")
-                    .append("  \"acceptedFrames\": ").append(acceptedFrames).append(",\n")
-                    .append("  \"strongPosePairs\": ").append(strongPairs).append(",\n")
-                    .append("  \"usablePosePairs\": ").append(usablePairs).append(",\n")
-                    .append("  \"requiredPairs\": ").append(requiredPairs).append(",\n")
-                    .append("  \"missingIntrinsicsFrames\": ").append(missingIntrinsicsFrames).append(",\n")
-                    .append("  \"ready\": ").append(ready).append(",\n")
-                    .append("  \"graph\": {\"status\":\"").append(graph.status)
-                    .append("\",\"components\":").append(graph.components)
-                    .append(",\"largestComponent\":").append(graph.largestComponent)
-                    .append(",\"nodeCount\":").append(graph.nodeCount)
-                    .append(",\"strongEdges\":").append(graph.strongEdges)
-                    .append(",\"crossBandEdges\":").append(graph.crossBandEdges)
-                    .append(",\"isolatedSequences\":").append(graph.isolatedSequences.toString())
-                    .append("},\n  \"pairs\": [\n");
+            StringBuilder json = new StringBuilder(2048 + pairs.size() * 350);
+            json.append("{\n  \"schema\":\"skm-polea-pose-graph/1\",\n")
+                    .append("  \"acceptedFrames\":").append(acceptedFrames).append(",\n")
+                    .append("  \"strongPosePairs\":").append(strongPairs).append(",\n")
+                    .append("  \"usablePosePairs\":").append(usablePairs).append(",\n")
+                    .append("  \"requiredPairs\":").append(requiredPairs).append(",\n")
+                    .append("  \"missingIntrinsicsFrames\":").append(missingIntrinsicsFrames).append(",\n")
+                    .append("  \"graphStatus\":\"").append(graph.status).append("\",\n")
+                    .append("  \"ready\":").append(ready).append(",\n  \"pairs\":[\n");
             for (int i = 0; i < pairs.size(); i++) {
                 Pair p = pairs.get(i);
                 String translation = p.translationDirection == null ? "null"
                         : String.format(Locale.ROOT, "[%.6f,%.6f,%.6f]",
-                        p.translationDirection[0], p.translationDirection[1],
-                        p.translationDirection[2]);
+                        p.translationDirection[0], p.translationDirection[1], p.translationDirection[2]);
                 json.append(String.format(Locale.ROOT,
-                        "    {\"left\":%d,\"right\":%d,"
-                                + "\"bands\":[\"%s\",\"%s\"],"
-                                + "\"sectors\":[%d,%d],"
-                                + "\"features\":[%d,%d],\"matches\":%d,"
-                                + "\"geometryInliers\":%d,"
-                                + "\"geometryRmsPx\":%.4f,\"inlierRatio\":%.5f,"
-                                + "\"geometryModel\":\"%s\","
-                                + "\"poseStatus\":\"%s\","
-                                + "\"rotationDegrees\":%.5f,"
-                                + "\"parallaxDegrees\":%.5f,"
-                                + "\"positiveDepthRatio\":%.5f,"
-                                + "\"translationDirection\":%s,"
+                        "    {\"left\":%d,\"right\":%d,\"bands\":[\"%s\",\"%s\"],"
+                                + "\"sectors\":[%d,%d],\"matches\":%d,\"inliers\":%d,"
+                                + "\"rmsPx\":%.4f,\"inlierRatio\":%.5f,"
+                                + "\"model\":\"%s\",\"poseStatus\":\"%s\","
+                                + "\"rotationDegrees\":%.5f,\"parallaxDegrees\":%.5f,"
+                                + "\"positiveDepthRatio\":%.5f,\"translationDirection\":%s,"
                                 + "\"status\":\"%s\"}",
                         p.leftSequence, p.rightSequence, p.leftBand, p.rightBand,
-                        p.leftSector, p.rightSector, p.leftFeatures, p.rightFeatures,
-                        p.matches, p.geometryInliers, p.geometryRmsPx, p.inlierRatio,
-                        p.geometryModel, p.poseStatus, p.rotationDegrees,
-                        p.parallaxDegrees, p.positiveDepthRatio, translation, p.status));
+                        p.leftSector, p.rightSector, p.rawMatches, p.inliers,
+                        p.rmsPx, p.inlierRatio, p.geometryModel, p.poseStatus,
+                        p.rotationDegrees, p.parallaxDegrees, p.positiveDepthRatio,
+                        translation, p.status));
                 if (i + 1 < pairs.size()) json.append(',');
                 json.append('\n');
             }
