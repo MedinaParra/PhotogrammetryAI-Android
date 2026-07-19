@@ -44,6 +44,7 @@ public final class CaptureActivity extends Activity {
     private TextView storage;
     private Button captureButton;
     private Button bandButton;
+    private Button overlapButton;
     private Button exportButton;
     private String band = "LOW";
     private DevicePoseTracker poseTracker;
@@ -162,6 +163,12 @@ public final class CaptureActivity extends Activity {
             @Override public void onClick(View view) { capture(); }
         });
         panel.addView(captureButton);
+
+        overlapButton = button("VERIFICAR SOLAPE", 48);
+        overlapButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { analyzeOverlap(); }
+        });
+        panel.addView(overlapButton);
 
         exportButton = button("EXPORTAR PAQUETE", 48);
         exportButton.setOnClickListener(new View.OnClickListener() {
@@ -308,6 +315,7 @@ public final class CaptureActivity extends Activity {
         captureButton.setEnabled(cameraReady && !processing && stability.ready()
                 && free >= CaptureReadiness.MIN_FREE_BYTES);
         captureButton.setText(processing ? "PROCESANDO…" : "CAPTURAR");
+        overlapButton.setEnabled(!processing && session.accepted >= 2);
         exportButton.setEnabled(!processing && session.accepted + session.rejected > 0);
     }
 
@@ -327,6 +335,38 @@ public final class CaptureActivity extends Activity {
                 })
                 .setNegativeButton("SEGUIR", null)
                 .show();
+    }
+
+    private void analyzeOverlap() {
+        if (processing) return;
+        processing = true;
+        status.setText("Analizando correspondencias y solape…");
+        refresh();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    final SessionOverlapAnalyzer.Report report = SessionOverlapAnalyzer.analyze(store, sessionId);
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            processing = false;
+                            status.setText(report.summary());
+                            status.setTextColor(report.ready
+                                    ? Color.rgb(130, 235, 155)
+                                    : Color.rgb(255, 190, 100));
+                            refresh();
+                        }
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            processing = false;
+                            showError(e.getMessage());
+                            refresh();
+                        }
+                    });
+                }
+            }
+        }, "PoleaOverlapAnalysis").start();
     }
 
     private void exportPackage() {
