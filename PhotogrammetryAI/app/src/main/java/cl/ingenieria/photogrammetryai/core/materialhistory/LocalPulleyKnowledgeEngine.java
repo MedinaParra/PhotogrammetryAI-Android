@@ -89,6 +89,15 @@ public final class LocalPulleyKnowledgeEngine {
         return ingestion.ingest(input);
     }
 
+    /** Preferred operator-facing entrypoint. It normalises SC/SAP/code and OT formats. */
+    public synchronized IdentificationOutcome identify(
+            PulleyIdentificationRequest request,
+            int limit
+    ) {
+        Objects.requireNonNull(request, "request");
+        return identify(request.toQuery(), limit);
+    }
+
     /**
      * Identifies candidates and persists the complete decision trace before returning.
      * Shell length remains mandatory because Query rejects zero or missing values.
@@ -118,9 +127,7 @@ public final class LocalPulleyKnowledgeEngine {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Unknown identification session: " + sessionId
                 ));
-        String normalizedCode = MaterialPulleyKnowledgeBase.normalizeMaterialCode(
-                selectedMaterialCode
-        );
+        String normalizedCode = MaterialCodeInput.normalize(selectedMaterialCode);
         if (!store.findByMaterialCode(normalizedCode).isPresent()) {
             throw new IllegalArgumentException(
                     "Selected material code is not present in local knowledge: " + normalizedCode
