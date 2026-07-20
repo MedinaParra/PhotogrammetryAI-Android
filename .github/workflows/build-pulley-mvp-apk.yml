@@ -59,6 +59,8 @@ jobs:
         run: sh PulleyKnowledgeMvp/tools/run_cad_assembly_v40_test.sh
       - name: Test mechanical assembly constraints
         run: sh PulleyKnowledgeMvp/tools/run_assembly_constraints_v41_test.sh
+      - name: Test STEP rigid centering and axial orientation
+        run: sh PulleyKnowledgeMvp/tools/run_step_mesh_placement_v42_test.sh
       - name: Fetch public STEP-enabled cadcore AAR
         run: |
           mkdir -p PulleyKnowledgeMvp/app/libs artifacts
