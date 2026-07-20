@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,6 +47,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_essential_pose_v33_test.sh
       - name: Test sparse triangulation
         run: bash PulleyKnowledgeMvp/tools/run_sparse_triangulation_v34_test.sh
+      - name: Test global tracks poses cloud and cylinder
+        run: bash PulleyKnowledgeMvp/tools/run_global_reconstruction_v34_v36_test.sh
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -56,12 +58,12 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir -p artifacts
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-horizontal-v0.8.0-alpha9.apk
-          sha256sum artifacts/SKM-Polea-AI-horizontal-v0.8.0-alpha9.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-horizontal-v0.9.0-alpha10.apk
+          sha256sum artifacts/SKM-Polea-AI-horizontal-v0.9.0-alpha10.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-horizontal-v0.8.0-alpha9
+          name: SKM-Polea-AI-horizontal-v0.9.0-alpha10
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
