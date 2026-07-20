@@ -51,6 +51,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_global_reconstruction_v34_v36_test.sh
       - name: Test shell segmentation and metric scale
         run: bash PulleyKnowledgeMvp/tools/run_pulley_shell_segmentation_v37_test.sh
+      - name: Test bounded selection refinement and budget
+        run: sh PulleyKnowledgeMvp/tools/run_maturity_v39.sh
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -60,12 +62,12 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir -p artifacts
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-horizontal-v0.10.0-alpha11.apk
-          sha256sum artifacts/SKM-Polea-AI-horizontal-v0.10.0-alpha11.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-horizontal-v0.11.0-alpha12.apk
+          sha256sum artifacts/SKM-Polea-AI-horizontal-v0.11.0-alpha12.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-horizontal-v0.10.0-alpha11
+          name: SKM-Polea-AI-horizontal-v0.11.0-alpha12
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
