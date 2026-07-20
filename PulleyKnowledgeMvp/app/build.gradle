@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai'
         minSdk 24
         targetSdk 35
-        versionCode 14
-        versionName '0.13.0-alpha14'
+        versionCode 15
+        versionName '0.14.0-alpha15'
         externalNativeBuild {
             cmake {
                 cppFlags '-std=c++17'
