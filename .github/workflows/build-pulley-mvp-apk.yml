@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,21 +55,26 @@ jobs:
         run: sh PulleyKnowledgeMvp/tools/run_maturity_v39.sh
       - name: Test guided orbit baseline prior
         run: sh PulleyKnowledgeMvp/tools/run_orbit_baseline_v40_test.sh
+      - name: Test CAD STEP validation and rigid assembly alignment
+        run: sh PulleyKnowledgeMvp/tools/run_cad_assembly_v40_test.sh
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK
+      - name: Build debug APK with native CAD bridge
         run: gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace
+      - name: Verify native bridge is packaged
+        run: |
+          unzip -l PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libfreecad_android_bridge.so'
       - name: Prepare artifact
         run: |
           mkdir -p artifacts
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-horizontal-v0.12.0-alpha13.apk
-          sha256sum artifacts/SKM-Polea-AI-horizontal-v0.12.0-alpha13.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.13.0-alpha14.apk
+          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.13.0-alpha14.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-horizontal-v0.12.0-alpha13
+          name: SKM-Polea-AI-CAD-STEP-v0.13.0-alpha14
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
