@@ -1,16 +1,36 @@
-# Validación APK portátil
+# Validación portátil — 0.2.0-alpha3
 
-Artefacto: `SKM-Polea-AI-MVP-v0.1.0.apk`
+## Código verificado
 
-- Paquete: `cl.skm.pulleyai`
-- Versión: `0.1.0-mvp` (`versionCode 1`)
-- Actividad principal: `cl.skm.pulleyai.MainActivity`
-- minSdk: 23
-- targetSdk: 28
-- Firma: SHA256withRSA, certificado de pruebas autofirmado
-- SHA-256: `00227ff6f5822bc82f33609c0be7b0d1eca47d9194046943737b23657c3bcc7c`
-- Manifest binario enlazado correctamente
-- DEX 035 parseable y actividad principal presente
-- Verificación de firma: `jar verified`
+- compilación de todas las clases Android contra framework Android 15;
+- recompilación compatible a bytecode Java 6 para el empaquetador portátil;
+- conversión a `classes.dex` Dalvik 035;
+- pruebas puras de cobertura, calidad, escala y selección de pares;
+- manifest binario con launcher, cámara y actividades internas;
+- firma APK Signature Scheme v2 verificada entre API 24 y 35.
 
-Limitación: no hubo un dispositivo Android/ADB disponible en la sesión para realizar un smoke test de instalación y apertura.
+## Artefacto
+
+- paquete: `cl.skm.pulleyai`;
+- versión: `0.2.0-alpha3` (`versionCode 4`);
+- `minSdk 24`;
+- `targetSdk 35`;
+- launcher: `cl.skm.pulleyai.LauncherActivity`;
+- SHA-256: `b4c0d59b85716ffc58cec2fe50019d20d0df76cb37b29c5262022bcb97c486be`.
+
+## Funciones integradas
+
+- creación y continuación de sesiones;
+- preview Camera2 y JPEG de resolución completa;
+- IMU y orientación por disparo;
+- cobertura de 12 sectores en dos alturas;
+- puerta mínima de 30 fotografías aceptadas;
+- rechazo explicado por desenfoque, luz o movimiento;
+- persistencia de fotografía, metadatos y SHA-256;
+- motor SQLite de conocimiento y validación dimensional;
+- evidencia auditada de OT-781, OT-867, OT-270 y OT-343;
+- resolución matemática de escala y selección de pares disponible como núcleo v0.27.
+
+## Límites
+
+No se ha ejecutado la APK en un teléfono dentro de esta sesión porque no existe ADB/dispositivo conectado. La aplicación aún no calcula correspondencias visuales, poses, triangulación, nube de puntos ni overlay STEP; por ello sigue siendo una alpha de captura y preparación fotogramétrica, no una versión productiva final.

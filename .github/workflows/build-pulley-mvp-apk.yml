@@ -1,10 +1,11 @@
-name: Build SKM Polea AI MVP APK
+name: Build SKM Polea AI product APK
 
 on:
   workflow_dispatch:
   push:
     branches:
       - agent/core-step-tracking-foundation
+      - product/single-device-photogrammetry-v1
     paths:
       - 'PulleyKnowledgeMvp/**'
       - '.github/workflows/build-pulley-mvp-apk.yml'
@@ -19,35 +20,120 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
+      - name: Test capture core
+        run: bash PulleyKnowledgeMvp/tools/run_capture_core_v26_tests.sh
+      - name: Test scale and baseline core
+        run: bash PulleyKnowledgeMvp/tools/run_reconstruction_core_v27_tests.sh
+      - name: Test industrial landscape capture
+        run: bash PulleyKnowledgeMvp/tools/run_industrial_capture_v28_tests.sh
+      - name: Test visual correspondences
+        run: bash PulleyKnowledgeMvp/tools/run_visual_correspondence_v29_test.sh
+      - name: Test multiview graph
+        run: bash PulleyKnowledgeMvp/tools/run_view_graph_v30_test.sh
+      - name: Test affine RANSAC
+        run: bash PulleyKnowledgeMvp/tools/run_affine_ransac_v31_test.sh
+      - name: Test fundamental matrix
+        run: bash PulleyKnowledgeMvp/tools/run_fundamental_matrix_v32_test.sh
+      - name: Test calibrated essential pose
+        run: bash PulleyKnowledgeMvp/tools/run_essential_pose_v33_test.sh
+      - name: Test sparse triangulation
+        run: bash PulleyKnowledgeMvp/tools/run_sparse_triangulation_v34_test.sh
+      - name: Test global tracks poses cloud and cylinder
+        run: bash PulleyKnowledgeMvp/tools/run_global_reconstruction_v34_v36_test.sh
+      - name: Test shell segmentation and metric scale
+        run: bash PulleyKnowledgeMvp/tools/run_pulley_shell_segmentation_v37_test.sh
+      - name: Test bounded selection refinement and budget
+        run: sh PulleyKnowledgeMvp/tools/run_maturity_v39.sh
+      - name: Test guided orbit baseline prior
+        run: sh PulleyKnowledgeMvp/tools/run_orbit_baseline_v40_test.sh
+      - name: Test CAD STEP validation and rigid assembly alignment
+        run: sh PulleyKnowledgeMvp/tools/run_cad_assembly_v40_test.sh
+      - name: Test mechanical assembly constraints
+        run: sh PulleyKnowledgeMvp/tools/run_assembly_constraints_v41_test.sh
+      - name: Test STEP rigid centering and axial orientation
+        run: sh PulleyKnowledgeMvp/tools/run_step_mesh_placement_v42_test.sh
+      - name: Test deterministic STEP kernel self-test model
+        run: sh PulleyKnowledgeMvp/tools/run_step_kernel_selftest_v43_test.sh
+      - name: Test adaptive bounded STEP tessellation policy
+        run: sh PulleyKnowledgeMvp/tools/run_step_tessellation_policy_v44_test.sh
+      - name: Test quantitative STEP overlay validation
+        run: sh PulleyKnowledgeMvp/tools/run_cad_overlay_validation_v45_test.sh
+      - name: Fetch verified pruned STEP-enabled cadcore v2 release
+        run: |
+          set -euo pipefail
+          mkdir -p PulleyKnowledgeMvp/app/libs artifacts
+          TARGET=PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v2.aar
+          RELEASE_URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v2/freecad-android-cadcore-step-v2.aar"
+          EXPECTED="43c5b01b546253498aa679deba7b31ccf85380007f79dc270245a5e0cb8ddff8"
+          curl --fail --location --retry 4 --retry-delay 3 \
+            "$RELEASE_URL" --output "$TARGET"
+          ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
+          test "$ACTUAL" = "$EXPECTED"
+          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nNATIVE_LIBRARY_COUNT=25\n' \
+            "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
-      - name: Build debug APK
-        run: gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace
-
+      - name: Build STEP-enabled debug APK
+        run: |
+          set -o pipefail
+          gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 \
+            | tee artifacts/gradle-build.log
+      - name: Upload Gradle diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKM-Polea-AI-alpha19-build-diagnostic
+          path: artifacts/gradle-build.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Verify pruned native STEP runtime packaging
+        run: |
+          set -euo pipefail
+          APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
+          CHECK="$RUNNER_TEMP/alpha19-apk"
+          rm -rf "$CHECK" && mkdir -p "$CHECK"
+          unzip -q "$APK" -d "$CHECK"
+          test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
+          test -f "$CHECK/lib/arm64-v8a/libTKDESTEP.so"
+          test -f "$CHECK/lib/arm64-v8a/libTKXSBase.so"
+          test -f "$CHECK/lib/arm64-v8a/libTKBRep.so"
+          test -f "$CHECK/lib/arm64-v8a/libTKMesh.so"
+          test -f "$CHECK/lib/arm64-v8a/libc++_shared.so"
+          test -f "$CHECK/assets/occt/NATIVE_CLOSURE.json"
+          test -d "$CHECK/assets/occt/XSTEPResource"
+          test -d "$CHECK/assets/occt/SHMessage"
+          COUNT=$(find "$CHECK/lib/arm64-v8a" -maxdepth 1 -type f -name '*.so' | wc -l)
+          test "$COUNT" -eq 25
+          test ! -f "$CHECK/lib/arm64-v8a/libTKOpenGles.so"
+          test ! -f "$CHECK/lib/arm64-v8a/libTKDEGLTF.so"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path("${{ runner.temp }}/alpha19-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          assert manifest["libraryCount"] == 24, manifest
+          assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
+          assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
+          print("alpha19 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          PY
       - name: Prepare artifact
         run: |
-          mkdir -p artifacts
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-MVP.apk
-          sha256sum artifacts/SKM-Polea-AI-MVP.apk | tee artifacts/SHA256SUMS.txt
-
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha19.apk
+          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha19.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-MVP
+          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha19
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
