@@ -82,14 +82,14 @@ public final class CadOverlayValidationCore {
 
     private static Result unavailable(String message){return new Result(Status.NOT_AVAILABLE,
             Double.NaN,Double.NaN,Double.NaN,Double.NaN,Double.NaN,Double.NaN,Double.NaN,Double.NaN,0,message);}
-    private static double[] transformPoint(double x,double y,double z,double tx,double ty,double tz,double rx,double ry,double rz){double[] q=rotate(x,y,z,rx,ry,rz);return new double[]{q[0]+tx,q[1]+ty,q[2]+tz};}
-    private static double[] transformVector(double x,double y,double z,double rx,double ry,double rz){return rotate(x,y,z,rx,ry,rz);}
-    private static double[] rotate(double x,double y,double z,double rx,double ry,double rz){
+    private static double[] transformPoint(double x,double y,double z,double tx,double ty,double tz,double rx,double ry,double rz){double[] q=rotateRaw(x,y,z,rx,ry,rz);return new double[]{q[0]+tx,q[1]+ty,q[2]+tz};}
+    private static double[] transformVector(double x,double y,double z,double rx,double ry,double rz){double[] q=rotateRaw(x,y,z,rx,ry,rz);double norm=Math.sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]);return norm>0?new double[]{q[0]/norm,q[1]/norm,q[2]/norm}:new double[]{0,0,0};}
+    private static double[] rotateRaw(double x,double y,double z,double rx,double ry,double rz){
         double ax=Math.toRadians(rx),ay=Math.toRadians(ry),az=Math.toRadians(rz);
         double cx=Math.cos(ax),sx=Math.sin(ax);double y1=cx*y-sx*z,z1=sx*y+cx*z;
         double cy=Math.cos(ay),sy=Math.sin(ay);double x2=cy*x+sy*z1,z2=-sy*x+cy*z1;
         double cz=Math.cos(az),sz=Math.sin(az);double x3=cz*x2-sz*y1,y3=sz*x2+cz*y1;
-        double norm=Math.sqrt(x3*x3+y3*y3+z2*z2);return norm>0?new double[]{x3/norm,y3/norm,z2/norm}:new double[]{0,0,0};
+        return new double[]{x3,y3,z2};
     }
     private static double clamp(double value,double min,double max){return Math.max(min,Math.min(max,value));}
 }
