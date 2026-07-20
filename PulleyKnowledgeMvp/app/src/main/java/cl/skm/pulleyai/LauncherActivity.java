@@ -18,7 +18,7 @@ import android.widget.Toast;
 import java.util.List;
 import java.util.Locale;
 
-/** Single product entry point for capture sessions and technical knowledge. */
+/** Single product entry point for capture, reconstruction, CAD assembly and knowledge. */
 public final class LauncherActivity extends Activity {
     private CaptureStore captureStore;
     private TextView stateView;
@@ -33,15 +33,8 @@ public final class LauncherActivity extends Activity {
         buildUi();
     }
 
-    @Override protected void onResume() {
-        super.onResume();
-        refresh();
-    }
-
-    @Override protected void onDestroy() {
-        captureStore.close();
-        super.onDestroy();
-    }
+    @Override protected void onResume() { super.onResume(); refresh(); }
+    @Override protected void onDestroy() { captureStore.close(); super.onDestroy(); }
 
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
@@ -53,7 +46,7 @@ public final class LauncherActivity extends Activity {
         TextView title = text("SKM Polea AI", 28, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
-        TextView subtitle = text("Captura industrial horizontal, conocimiento local y validación dimensional trazable.", 15, false);
+        TextView subtitle = text("Captura horizontal, fotogrametría, ensamblaje CAD/STEP y validación trazable.", 15, false);
         subtitle.setPadding(0, dp(4), 0, dp(14));
         root.addView(subtitle);
 
@@ -63,34 +56,34 @@ public final class LauncherActivity extends Activity {
         root.addView(stateView);
 
         Button create = button("NUEVA SESIÓN DE CAPTURA");
-        create.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { showCreateDialog(); }
-        });
+        create.setOnClickListener(view -> showCreateDialog());
         root.addView(create);
 
         Button resume = button("CONTINUAR ÚLTIMA CAPTURA");
-        resume.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) {
-                CaptureStore.Session session = captureStore.latestOpen();
-                if (session == null) Toast.makeText(LauncherActivity.this, "No hay una sesión abierta.", Toast.LENGTH_LONG).show();
-                else openCapture(session.id);
-            }
+        resume.setOnClickListener(view -> {
+            CaptureStore.Session session = captureStore.latestOpen();
+            if (session == null) Toast.makeText(this, "No hay una sesión abierta.", Toast.LENGTH_LONG).show();
+            else openCapture(session.id);
         });
         root.addView(resume);
 
-        Button knowledge = button("CONOCIMIENTO Y VALIDACIÓN DE COTAS");
-        knowledge.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) {
-                startActivity(new Intent(LauncherActivity.this, MainActivity.class));
-            }
+        Button cad = button("ENSAMBLAJE CAD / IMPORTAR STEP");
+        cad.setOnClickListener(view -> {
+            CaptureStore.Session latest = captureStore.latestOpen();
+            if (latest == null) {
+                List<CaptureStore.Session> recent = captureStore.recent(1);
+                openCad(recent.isEmpty() ? "standalone" : recent.get(0).id);
+            } else openCad(latest.id);
         });
+        root.addView(cad);
+
+        Button knowledge = button("CONOCIMIENTO Y VALIDACIÓN DE COTAS");
+        knowledge.setOnClickListener(view -> startActivity(new Intent(this, MainActivity.class)));
         root.addView(knowledge);
 
         TextView warning = text(
-                "La captura es horizontal y trazable. La aplicación no declara reconstrucción 3D hasta calcular poses, escala y error.",
-                12,
-                false
-        );
+                "La superposición CAD usa transformaciones rígidas. Ningún STEP se escala para forzar coincidencia; si el kernel nativo no está enlazado, el archivo queda registrado pero no se dibuja.",
+                12, false);
         warning.setTextColor(Color.DKGRAY);
         warning.setPadding(0, dp(15), 0, 0);
         root.addView(warning);
@@ -112,37 +105,28 @@ public final class LauncherActivity extends Activity {
         final EditText ot = input("OT (opcional)", InputType.TYPE_CLASS_TEXT);
         final EditText length = input("Largo real del manto en mm (obligatorio)",
                 InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        form.addView(label);
-        form.addView(code);
-        form.addView(ot);
-        form.addView(length);
+        form.addView(label); form.addView(code); form.addView(ot); form.addView(length);
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Nueva sesión")
-                .setMessage("Use el teléfono horizontal. Puede omitir código u OT, pero el largo real del manto es obligatorio para una sesión métrica.")
+                .setMessage("Use el teléfono horizontal. El largo real del manto es obligatorio para resolver escala métrica.")
                 .setView(form)
                 .setPositiveButton("CREAR Y ABRIR", null)
                 .setNegativeButton("CANCELAR", null)
                 .create();
         dialog.setOnShowListener(new DialogInterface.OnShowListener() {
             @Override public void onShow(DialogInterface ignored) {
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
-                    @Override public void onClick(View view) {
-                        Double shellLength = parsePositive(length.getText().toString());
-                        if (shellLength == null) {
-                            length.setError("Ingrese un largo válido mayor que cero");
-                            length.requestFocus();
-                            return;
-                        }
-                        String id = captureStore.createSession(
-                                label.getText().toString(),
-                                code.getText().toString(),
-                                ot.getText().toString(),
-                                shellLength
-                        );
-                        dialog.dismiss();
-                        openCapture(id);
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+                    Double shellLength = parsePositive(length.getText().toString());
+                    if (shellLength == null) {
+                        length.setError("Ingrese un largo válido mayor que cero");
+                        length.requestFocus();
+                        return;
                     }
+                    String id = captureStore.createSession(label.getText().toString(),
+                            code.getText().toString(), ot.getText().toString(), shellLength);
+                    dialog.dismiss();
+                    openCapture(id);
                 });
             }
         });
@@ -155,11 +139,20 @@ public final class LauncherActivity extends Activity {
         startActivity(intent);
     }
 
+    private void openCad(String id) {
+        Intent intent = new Intent(this, CadAssemblyActivity.class);
+        intent.putExtra(CadAssemblyActivity.EXTRA_SESSION_ID, id);
+        startActivity(intent);
+    }
+
     private void refresh() {
         CaptureStore.Session open = captureStore.latestOpen();
-        stateView.setText(open == null
+        FreeCadNativeBridge.Status core = FreeCadNativeBridge.status();
+        stateView.setText((open == null
                 ? "Bases locales listas · no hay captura abierta"
-                : "Captura abierta: " + open.label + " · " + open.accepted + " fotos aceptadas");
+                : "Captura abierta: " + open.label + " · " + open.accepted + " fotos aceptadas")
+                + "\nCAD: " + core.runtimeInfo
+                + (core.supportsStep() ? " · STEP nativo disponible" : " · STEP pendiente de kernel OpenCascade"));
         stateView.setTextColor(open == null ? Color.rgb(35, 84, 117) : Color.rgb(145, 82, 0));
 
         recentContainer.removeAllViews();
@@ -184,59 +177,23 @@ public final class LauncherActivity extends Activity {
                 details += String.format(Locale.ROOT, "\nLargo de referencia: %.1f mm", session.shellLengthMm);
             }
             card.addView(text(details, 13, false));
-            Button openButton = button("ABRIR SESIÓN");
-            openButton.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View view) { openCapture(session.id); }
-            });
-            card.addView(openButton);
+            LinearLayout actions = new LinearLayout(this);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            Button openButton = button("ABRIR CAPTURA");
+            openButton.setOnClickListener(view -> openCapture(session.id));
+            actions.addView(openButton, new LinearLayout.LayoutParams(0, -2, 1f));
+            Button cadButton = button("ENSAMBLAJE CAD");
+            cadButton.setOnClickListener(view -> openCad(session.id));
+            actions.addView(cadButton, new LinearLayout.LayoutParams(0, -2, 1f));
+            card.addView(actions);
             recentContainer.addView(card);
         }
     }
 
-    private LinearLayout vertical() {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        return layout;
-    }
-
-    private TextView text(String value, int sp, boolean bold) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(sp);
-        view.setTextColor(Color.rgb(35, 39, 42));
-        if (bold) view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        return view;
-    }
-
-    private Button button(String label) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAllCaps(false);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.setMargins(0, dp(8), 0, 0);
-        button.setLayoutParams(params);
-        return button;
-    }
-
-    private EditText input(String hint, int type) {
-        EditText edit = new EditText(this);
-        edit.setHint(hint);
-        edit.setInputType(type);
-        edit.setSingleLine(true);
-        return edit;
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private static Double parsePositive(String raw) {
-        if (raw == null || raw.trim().isEmpty()) return null;
-        try {
-            double value = Double.parseDouble(raw.trim().replace(',', '.'));
-            return value > 0.0 && !Double.isNaN(value) && !Double.isInfinite(value) ? value : null;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
+    private LinearLayout vertical() { LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL); return layout; }
+    private TextView text(String value, int sp, boolean bold) { TextView view = new TextView(this); view.setText(value); view.setTextSize(sp); view.setTextColor(Color.rgb(35, 39, 42)); if (bold) view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); return view; }
+    private Button button(String label) { Button button = new Button(this); button.setText(label); button.setAllCaps(false); LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.setMargins(0, dp(8), 0, 0); button.setLayoutParams(params); return button; }
+    private EditText input(String hint, int type) { EditText edit = new EditText(this); edit.setHint(hint); edit.setInputType(type); edit.setSingleLine(true); return edit; }
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private static Double parsePositive(String raw) { if (raw == null || raw.trim().isEmpty()) return null; try { double value = Double.parseDouble(raw.trim().replace(',', '.')); return value > 0.0 && !Double.isNaN(value) && !Double.isInfinite(value) ? value : null; } catch (NumberFormatException ignored) { return null; } }
 }
