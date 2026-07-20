@@ -26,6 +26,10 @@
             android:exported="false"
             android:screenOrientation="landscape" />
         <activity
+            android:name=".StepKernelActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <activity
             android:name=".MainActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
