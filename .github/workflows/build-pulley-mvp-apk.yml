@@ -63,18 +63,18 @@ jobs:
         run: sh PulleyKnowledgeMvp/tools/run_step_mesh_placement_v42_test.sh
       - name: Test deterministic STEP kernel self-test model
         run: sh PulleyKnowledgeMvp/tools/run_step_kernel_selftest_v43_test.sh
-      - name: Fetch verified STEP-enabled cadcore release
+      - name: Fetch verified pruned STEP-enabled cadcore v2 release
         run: |
           set -euo pipefail
           mkdir -p PulleyKnowledgeMvp/app/libs artifacts
-          TARGET=PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar
-          RELEASE_URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v1/freecad-android-cadcore-step-v1.aar"
-          EXPECTED="c8de1869b1a777a89f3d924130c4567bfe16ba218504ca3d83a3467bbd3bd795"
+          TARGET=PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v2.aar
+          RELEASE_URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v2/freecad-android-cadcore-step-v2.aar"
+          EXPECTED="43c5b01b546253498aa679deba7b31ccf85380007f79dc270245a5e0cb8ddff8"
           curl --fail --location --retry 4 --retry-delay 3 \
             "$RELEASE_URL" --output "$TARGET"
           ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
           test "$ACTUAL" = "$EXPECTED"
-          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v1\nCADCORE_SHA256=%s\n' \
+          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nNATIVE_LIBRARY_COUNT=25\n' \
             "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -89,30 +89,47 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha17-build-diagnostic
+          name: SKM-Polea-AI-alpha18-build-diagnostic
           path: artifacts/gradle-build.log
           if-no-files-found: warn
           retention-days: 14
-      - name: Verify native STEP runtime packaging
+      - name: Verify pruned native STEP runtime packaging
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          unzip -l "$APK" | grep 'lib/arm64-v8a/libfreecad_android_bridge.so'
-          unzip -l "$APK" | grep 'lib/arm64-v8a/libTKDESTEP.so'
-          unzip -l "$APK" | grep 'lib/arm64-v8a/libTKXSBase.so'
-          unzip -l "$APK" | grep 'lib/arm64-v8a/libTKBRep.so'
-          unzip -l "$APK" | grep 'lib/arm64-v8a/libTKMesh.so'
-          unzip -l "$APK" | grep 'lib/arm64-v8a/libc++_shared.so'
-          unzip -l "$APK" | grep 'assets/occt/XSTEPResource/'
-          unzip -l "$APK" | grep 'assets/occt/SHMessage/'
+          CHECK="$RUNNER_TEMP/alpha18-apk"
+          rm -rf "$CHECK" && mkdir -p "$CHECK"
+          unzip -q "$APK" -d "$CHECK"
+          test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
+          test -f "$CHECK/lib/arm64-v8a/libTKDESTEP.so"
+          test -f "$CHECK/lib/arm64-v8a/libTKXSBase.so"
+          test -f "$CHECK/lib/arm64-v8a/libTKBRep.so"
+          test -f "$CHECK/lib/arm64-v8a/libTKMesh.so"
+          test -f "$CHECK/lib/arm64-v8a/libc++_shared.so"
+          test -f "$CHECK/assets/occt/NATIVE_CLOSURE.json"
+          test -d "$CHECK/assets/occt/XSTEPResource"
+          test -d "$CHECK/assets/occt/SHMessage"
+          COUNT=$(find "$CHECK/lib/arm64-v8a" -maxdepth 1 -type f -name '*.so' | wc -l)
+          test "$COUNT" -eq 25
+          test ! -f "$CHECK/lib/arm64-v8a/libTKOpenGles.so"
+          test ! -f "$CHECK/lib/arm64-v8a/libTKDEGLTF.so"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path("${{ runner.temp }}/alpha18-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          assert manifest["libraryCount"] == 24, manifest
+          assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
+          assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
+          print("alpha18 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          PY
       - name: Prepare artifact
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.16.0-alpha17.apk
-          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.16.0-alpha17.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.17.0-alpha18.apk
+          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.17.0-alpha18.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-CAD-STEP-v0.16.0-alpha17
+          name: SKM-Polea-AI-CAD-STEP-v0.17.0-alpha18
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
