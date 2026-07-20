@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** Produces a portable assembly manifest while preserving STEP and tessellation evidence. */
+/** Produces a portable assembly manifest while preserving STEP, mesh and overlay evidence. */
 public final class CadAssemblyPackageExporter {
     private CadAssemblyPackageExporter() { }
 
@@ -26,11 +26,27 @@ public final class CadAssemblyPackageExporter {
         List<CadAssemblyStore.Component> components=store.components(assemblyId);
         AssemblyConstraintCore.Result constraints=AssemblyConstraintCore.evaluate(toParts(components));
         Map<String,CadMeshCache.Record> meshes=new HashMap<String,CadMeshCache.Record>();
+        Map<String,CadOverlayValidationCore.Result> overlays=new HashMap<String,CadOverlayValidationCore.Result>();
+        Double referenceLength=session==null?null:session.shellLengthMm;
+        Double referenceDiameter=reconstruction==null?null:reconstruction.diameterMm;
         CadMeshCache meshCache=new CadMeshCache(context);
         try {
             for(CadAssemblyStore.Component component:components){
                 CadMeshCache.Record record=meshCache.find(component.id);
                 if(record!=null)meshes.put(component.id,record);
+                if(record!=null&&record.ready()&&component.sourceKind==CadAssemblyStore.SourceKind.STEP
+                        &&component.type==CadAssemblyStore.Type.SHELL&&referenceLength!=null&&referenceDiameter!=null){
+                    try{
+                        CadMeshCache.Mesh mesh=meshCache.load(component.id);
+                        if(mesh!=null)overlays.put(component.id,CadOverlayValidationCore.evaluate(
+                                referenceLength,referenceDiameter,mesh.bounds,
+                                component.txMm,component.tyMm,component.tzMm,
+                                component.rxDeg,component.ryDeg,component.rzDeg));
+                    }catch(Exception error){
+                        overlays.put(component.id,CadOverlayValidationCore.evaluate(
+                                0,0,null,0,0,0,0,0,0));
+                    }
+                }
             }
         } finally {
             meshCache.close();
@@ -38,7 +54,7 @@ public final class CadAssemblyPackageExporter {
         File root=new File(context.getCacheDir(),"cad_exports");
         if(!root.exists()&&!root.mkdirs())throw new IllegalStateException("No se pudo crear carpeta de exportación CAD");
         File output=new File(root,"SKM_CAD_"+safeFile(session==null?assemblyId:session.label)+"_"+System.currentTimeMillis()+".zip");
-        byte[] manifest=manifest(assemblyId,sessionId,session,reconstruction,core,components,constraints,meshes)
+        byte[] manifest=manifest(assemblyId,sessionId,session,reconstruction,core,components,constraints,meshes,overlays)
                 .getBytes(StandardCharsets.UTF_8);
         try(ZipOutputStream zip=new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(output)))){
             put(zip,"assembly_manifest.json",manifest);
@@ -76,9 +92,10 @@ public final class CadAssemblyPackageExporter {
                                    FreeCadNativeBridge.Status core,
                                    List<CadAssemblyStore.Component> components,
                                    AssemblyConstraintCore.Result constraints,
-                                   Map<String,CadMeshCache.Record> meshes){
-        StringBuilder json=new StringBuilder(4096+components.size()*760);
-        json.append("{\n  \"schema\":\"skm-cad-assembly/2\",\n")
+                                   Map<String,CadMeshCache.Record> meshes,
+                                   Map<String,CadOverlayValidationCore.Result> overlays){
+        StringBuilder json=new StringBuilder(4600+components.size()*980);
+        json.append("{\n  \"schema\":\"skm-cad-assembly/3\",\n")
                 .append("  \"assemblyId\":").append(q(assemblyId)).append(",\n")
                 .append("  \"sessionId\":").append(q(sessionId)).append(",\n")
                 .append("  \"exportedAt\":").append(System.currentTimeMillis()).append(",\n")
@@ -108,6 +125,7 @@ public final class CadAssemblyPackageExporter {
         for(int i=0;i<components.size();i++){
             CadAssemblyStore.Component c=components.get(i);
             CadMeshCache.Record mesh=meshes.get(c.id);
+            CadOverlayValidationCore.Result overlay=overlays.get(c.id);
             json.append("    {\"id\":").append(q(c.id))
                     .append(",\"name\":").append(q(c.name))
                     .append(",\"type\":").append(q(c.type.name()))
@@ -136,6 +154,22 @@ public final class CadAssemblyPackageExporter {
                         .append(",\"archivePath\":")
                         .append(mesh.ready()?q("mesh/"+safeFile(c.id+".skmesh")):"null")
                         .append('}');
+            }
+            json.append(",\"overlayValidation\":");
+            if(overlay==null){
+                json.append("null");
+            }else{
+                json.append("{\"status\":").append(q(overlay.status.name()))
+                        .append(",\"score\":").append(f(overlay.score))
+                        .append(",\"cadLengthMm\":").append(f(overlay.cadLengthMm))
+                        .append(",\"cadDiameterMm\":").append(f(overlay.cadDiameterMm))
+                        .append(",\"lengthErrorMm\":").append(f(overlay.lengthErrorMm))
+                        .append(",\"diameterErrorMm\":").append(f(overlay.diameterErrorMm))
+                        .append(",\"axisAngleDeg\":").append(f(overlay.axisAngleDeg))
+                        .append(",\"radialCenterOffsetMm\":").append(f(overlay.radialCenterOffsetMm))
+                        .append(",\"axialCenterOffsetMm\":").append(f(overlay.axialCenterOffsetMm))
+                        .append(",\"ovalityMm\":").append(f(overlay.ovalityMm))
+                        .append(",\"diagnostic\":").append(q(overlay.diagnostic)).append('}');
             }
             json.append(",\"visible\":").append(c.visible)
                     .append(",\"locked\":").append(c.locked).append('}');
