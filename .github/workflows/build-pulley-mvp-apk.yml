@@ -61,6 +61,8 @@ jobs:
         run: sh PulleyKnowledgeMvp/tools/run_assembly_constraints_v41_test.sh
       - name: Test STEP rigid centering and axial orientation
         run: sh PulleyKnowledgeMvp/tools/run_step_mesh_placement_v42_test.sh
+      - name: Test deterministic STEP kernel self-test model
+        run: sh PulleyKnowledgeMvp/tools/run_step_kernel_selftest_v43_test.sh
       - name: Fetch verified STEP-enabled cadcore release
         run: |
           set -euo pipefail
