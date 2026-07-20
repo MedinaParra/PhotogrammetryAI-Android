@@ -1,6 +1,7 @@
 package cl.skm.pulleyai;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -13,6 +14,7 @@ import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /** Processes registered STEP evidence through the OCCT cadcore AAR. */
 public final class StepKernelActivity extends Activity {
@@ -20,8 +22,10 @@ public final class StepKernelActivity extends Activity {
     private CadAssemblyStore assemblyStore;
     private CadMeshCache meshCache;
     private CaptureStore captureStore;
+    private ReconstructionResultStore resultStore;
     private String sessionId,assemblyId;
     private CaptureStore.Session session;
+    private ReconstructionResultStore.Snapshot reconstruction;
     private TextView runtimeView,progressView,selfTestView;
     private LinearLayout listContainer;
     private boolean busy,destroyed;
@@ -33,7 +37,9 @@ public final class StepKernelActivity extends Activity {
         assemblyStore=new CadAssemblyStore(this);
         meshCache=new CadMeshCache(this);
         captureStore=new CaptureStore(this);
+        resultStore=new ReconstructionResultStore(this);
         session=captureStore.getSession(sessionId);
+        reconstruction=resultStore.find(sessionId);
         CadCoreStepImporter.Status runtime=CadCoreStepImporter.status(this);
         assemblyId=assemblyStore.ensureAssembly(sessionId,
                 session==null?"Ensamblaje de polea":session.label,runtime.runtime);
@@ -42,7 +48,7 @@ public final class StepKernelActivity extends Activity {
 
     @Override protected void onDestroy(){
         destroyed=true;
-        assemblyStore.close();meshCache.close();captureStore.close();super.onDestroy();
+        assemblyStore.close();meshCache.close();captureStore.close();resultStore.close();super.onDestroy();
     }
 
     private void buildUi(){
@@ -56,6 +62,7 @@ public final class StepKernelActivity extends Activity {
         progressView=text("Sin procesamiento activo",13,false);progressView.setPadding(0,dp(12),0,dp(10));controls.addView(progressView);
         Button selfTest=button("AUTOPRUEBA KERNEL STEP");selfTest.setOnClickListener(v->runSelfTest());controls.addView(selfTest);
         Button processAll=button("PROCESAR TODOS LOS STEP");processAll.setOnClickListener(v->processAll());controls.addView(processAll);
+        Button audit=button("AUDITAR SUPERPOSICIÓN");audit.setOnClickListener(v->auditOverlay());controls.addView(audit);
         Button assembly=button("VOLVER A ENSAMBLAJE");assembly.setOnClickListener(v->openAssembly());controls.addView(assembly);
         TextView note=text("El kernel no escala modelos. Importa, tesela y conserva las dimensiones STEP; CENTRAR/ORIENTAR aplica solo rotación y traslación rígidas. Ejecute la autoprueba después de instalar o actualizar la APK.",12,false);note.setPadding(0,dp(14),0,0);controls.addView(note);
 
@@ -69,9 +76,11 @@ public final class StepKernelActivity extends Activity {
         runtimeView.setText("AAR: "+(runtime.aarPresent?"presente":"ausente")
                 +"\nRuntime: "+runtime.runtime
                 +"\nSTEP: "+(runtime.stepReady?"LISTO":"NO DISPONIBLE")
+                +"\nPuerta industrial: "+CadKernelSelfTest.approvalDiagnostic(this,runtime.runtime)
                 +(runtime.diagnostic==null||runtime.diagnostic.isEmpty()?"":"\n"+runtime.diagnostic));
-        runtimeView.setTextColor(runtime.stepReady?Color.rgb(20,115,65):Color.rgb(155,83,0));
-        runtimeView.setBackgroundColor(runtime.stepReady?Color.rgb(215,246,226):Color.rgb(255,239,205));
+        boolean approved=runtime.stepReady&&CadKernelSelfTest.approvedFor(this,runtime.runtime);
+        runtimeView.setTextColor(approved?Color.rgb(20,115,65):Color.rgb(155,83,0));
+        runtimeView.setBackgroundColor(approved?Color.rgb(215,246,226):Color.rgb(255,239,205));
         selfTestView.setText("ÚLTIMA AUTOPRUEBA\n"+CadKernelSelfTest.lastSummary(this));
         listContainer.removeAllViews();
         List<CadAssemblyStore.Component> steps=stepComponents();
@@ -97,6 +106,36 @@ public final class StepKernelActivity extends Activity {
                 }});
             }
         },"cad-kernel-self-test").start();
+    }
+
+    private void auditOverlay(){
+        Double length=session==null?null:session.shellLengthMm;
+        Double diameter=reconstruction==null?null:reconstruction.diameterMm;
+        if(length==null||diameter==null||!(length>0&&diameter>0)){
+            new AlertDialog.Builder(this).setTitle("Auditoría de superposición")
+                    .setMessage("Se requiere largo real del manto y diámetro métrico reconstruido antes de auditar un STEP.")
+                    .setPositiveButton("CERRAR",null).show();return;
+        }
+        StringBuilder body=new StringBuilder();int evaluated=0;
+        for(CadAssemblyStore.Component component:stepComponents()){
+            if(component.type!=CadAssemblyStore.Type.SHELL)continue;
+            try{
+                CadMeshCache.Mesh mesh=meshCache.load(component.id);if(mesh==null)continue;
+                CadOverlayValidationCore.Result result=CadOverlayValidationCore.evaluate(length,diameter,mesh.bounds,
+                        component.txMm,component.tyMm,component.tzMm,
+                        component.rxDeg,component.ryDeg,component.rzDeg);
+                if(evaluated++>0)body.append("\n\n");
+                body.append(component.name).append("\n").append(result.summary())
+                        .append("\n").append(result.diagnostic);
+            }catch(Exception error){
+                if(evaluated++>0)body.append("\n\n");
+                body.append(component.name).append("\nERROR · ").append(error.getMessage());
+            }
+        }
+        if(evaluated==0)body.append("No hay un componente STEP de tipo MANTO con malla procesada.");
+        body.append(String.format(Locale.ROOT,"\n\nReferencia fotogramétrica: L %.1f mm · Ø %.1f mm",length,diameter));
+        new AlertDialog.Builder(this).setTitle("Auditoría cuantitativa STEP")
+                .setMessage(body.toString()).setPositiveButton("CERRAR",null).show();
     }
 
     private LinearLayout card(final CadAssemblyStore.Component component){
