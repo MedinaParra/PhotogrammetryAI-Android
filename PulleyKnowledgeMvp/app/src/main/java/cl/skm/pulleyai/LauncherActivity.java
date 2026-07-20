@@ -7,7 +7,6 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.InputType;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -18,7 +17,7 @@ import android.widget.Toast;
 import java.util.List;
 import java.util.Locale;
 
-/** Single product entry point for capture, reconstruction, CAD assembly and knowledge. */
+/** Single product entry point for capture, reconstruction, CAD assembly and native STEP. */
 public final class LauncherActivity extends Activity {
     private CaptureStore captureStore;
     private TextView stateView;
@@ -46,7 +45,7 @@ public final class LauncherActivity extends Activity {
         TextView title = text("SKM Polea AI", 28, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
-        TextView subtitle = text("Captura horizontal, fotogrametría, ensamblaje CAD/STEP y validación trazable.", 15, false);
+        TextView subtitle = text("Captura horizontal, fotogrametría, ensamblaje CAD, STEP nativo y validación trazable.", 15, false);
         subtitle.setPadding(0, dp(4), 0, dp(14));
         root.addView(subtitle);
 
@@ -68,21 +67,19 @@ public final class LauncherActivity extends Activity {
         root.addView(resume);
 
         Button cad = button("ENSAMBLAJE CAD / IMPORTAR STEP");
-        cad.setOnClickListener(view -> {
-            CaptureStore.Session latest = captureStore.latestOpen();
-            if (latest == null) {
-                List<CaptureStore.Session> recent = captureStore.recent(1);
-                openCad(recent.isEmpty() ? "standalone" : recent.get(0).id);
-            } else openCad(latest.id);
-        });
+        cad.setOnClickListener(view -> openCad(latestSessionId()));
         root.addView(cad);
+
+        Button kernel = button("PROCESAR STEP CON KERNEL NATIVO");
+        kernel.setOnClickListener(view -> openStepKernel(latestSessionId()));
+        root.addView(kernel);
 
         Button knowledge = button("CONOCIMIENTO Y VALIDACIÓN DE COTAS");
         knowledge.setOnClickListener(view -> startActivity(new Intent(this, MainActivity.class)));
         root.addView(knowledge);
 
         TextView warning = text(
-                "La superposición CAD usa transformaciones rígidas. Ningún STEP se escala para forzar coincidencia; si el kernel nativo no está enlazado, el archivo queda registrado pero no se dibuja.",
+                "La superposición CAD usa transformaciones rígidas. Ningún STEP se escala para forzar coincidencia. Los archivos se validan por SHA-256 y solo se dibujan cuando el kernel OCCT devuelve una teselación real.",
                 12, false);
         warning.setTextColor(Color.DKGRAY);
         warning.setPadding(0, dp(15), 0, 0);
@@ -133,6 +130,13 @@ public final class LauncherActivity extends Activity {
         dialog.show();
     }
 
+    private String latestSessionId() {
+        CaptureStore.Session latest = captureStore.latestOpen();
+        if (latest != null) return latest.id;
+        List<CaptureStore.Session> recent = captureStore.recent(1);
+        return recent.isEmpty() ? "standalone" : recent.get(0).id;
+    }
+
     private void openCapture(String id) {
         Intent intent = new Intent(this, CaptureActivity.class);
         intent.putExtra(CaptureActivity.EXTRA_SESSION_ID, id);
@@ -145,15 +149,23 @@ public final class LauncherActivity extends Activity {
         startActivity(intent);
     }
 
+    private void openStepKernel(String id) {
+        Intent intent = new Intent(this, StepKernelActivity.class);
+        intent.putExtra(StepKernelActivity.EXTRA_SESSION_ID, id);
+        startActivity(intent);
+    }
+
     private void refresh() {
         CaptureStore.Session open = captureStore.latestOpen();
-        FreeCadNativeBridge.Status core = FreeCadNativeBridge.status();
+        CadCoreStepImporter.Status core = CadCoreStepImporter.status(this);
         stateView.setText((open == null
                 ? "Bases locales listas · no hay captura abierta"
                 : "Captura abierta: " + open.label + " · " + open.accepted + " fotos aceptadas")
-                + "\nCAD: " + core.runtimeInfo
-                + (core.supportsStep() ? " · STEP nativo disponible" : " · STEP pendiente de kernel OpenCascade"));
-        stateView.setTextColor(open == null ? Color.rgb(35, 84, 117) : Color.rgb(145, 82, 0));
+                + "\nCAD: " + core.runtime
+                + (core.stepReady ? " · STEP NATIVO LISTO" : " · STEP pendiente")
+                + (core.diagnostic == null || core.diagnostic.isEmpty() ? "" : "\n" + core.diagnostic));
+        stateView.setTextColor(core.stepReady ? Color.rgb(25, 108, 65)
+                : open == null ? Color.rgb(35, 84, 117) : Color.rgb(145, 82, 0));
 
         recentContainer.removeAllViews();
         List<CaptureStore.Session> recent = captureStore.recent(8);
@@ -179,12 +191,15 @@ public final class LauncherActivity extends Activity {
             card.addView(text(details, 13, false));
             LinearLayout actions = new LinearLayout(this);
             actions.setOrientation(LinearLayout.HORIZONTAL);
-            Button openButton = button("ABRIR CAPTURA");
+            Button openButton = button("CAPTURA");
             openButton.setOnClickListener(view -> openCapture(session.id));
             actions.addView(openButton, new LinearLayout.LayoutParams(0, -2, 1f));
-            Button cadButton = button("ENSAMBLAJE CAD");
+            Button cadButton = button("CAD");
             cadButton.setOnClickListener(view -> openCad(session.id));
             actions.addView(cadButton, new LinearLayout.LayoutParams(0, -2, 1f));
+            Button stepButton = button("STEP");
+            stepButton.setOnClickListener(view -> openStepKernel(session.id));
+            actions.addView(stepButton, new LinearLayout.LayoutParams(0, -2, 1f));
             card.addView(actions);
             recentContainer.addView(card);
         }
