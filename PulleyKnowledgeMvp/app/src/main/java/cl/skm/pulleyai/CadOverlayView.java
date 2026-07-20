@@ -39,7 +39,17 @@ public final class CadOverlayView extends View {
 
     public void setAssembly(List<CadAssemblyStore.Component> components,
                             Double referenceLengthMm,Double referenceDiameterMm) {
-        setAssembly(components,referenceLengthMm,referenceDiameterMm,Collections.<String,CadMeshCache.Mesh>emptyMap());
+        Map<String,CadMeshCache.Mesh> loaded=Collections.emptyMap();
+        CadMeshCache cache=null;
+        try{
+            cache=new CadMeshCache(getContext());
+            loaded=cache.loadReady(components);
+        }catch(Throwable ignored){
+            loaded=Collections.emptyMap();
+        }finally{
+            if(cache!=null)cache.close();
+        }
+        setAssembly(components,referenceLengthMm,referenceDiameterMm,loaded);
     }
 
     public void setAssembly(List<CadAssemblyStore.Component> components,
