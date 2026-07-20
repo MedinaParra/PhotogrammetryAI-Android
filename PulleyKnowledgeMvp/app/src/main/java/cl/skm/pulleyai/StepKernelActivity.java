@@ -14,7 +14,7 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Processes registered STEP evidence through the optional OCCT cadcore AAR. */
+/** Processes registered STEP evidence through the OCCT cadcore AAR. */
 public final class StepKernelActivity extends Activity {
     public static final String EXTRA_SESSION_ID="session_id";
     private CadAssemblyStore assemblyStore;
@@ -22,9 +22,9 @@ public final class StepKernelActivity extends Activity {
     private CaptureStore captureStore;
     private String sessionId,assemblyId;
     private CaptureStore.Session session;
-    private TextView runtimeView,progressView;
+    private TextView runtimeView,progressView,selfTestView;
     private LinearLayout listContainer;
-    private boolean busy;
+    private boolean busy,destroyed;
 
     @Override protected void onCreate(Bundle state){
         super.onCreate(state);
@@ -41,6 +41,7 @@ public final class StepKernelActivity extends Activity {
     }
 
     @Override protected void onDestroy(){
+        destroyed=true;
         assemblyStore.close();meshCache.close();captureStore.close();super.onDestroy();
     }
 
@@ -51,10 +52,12 @@ public final class StepKernelActivity extends Activity {
         root.addView(controls,new LinearLayout.LayoutParams(0,-1,0.85f));
         TextView title=text("KERNEL STEP NATIVO",24,true);title.setTextColor(Color.rgb(20,62,89));controls.addView(title);
         runtimeView=text("",13,true);runtimeView.setPadding(dp(10),dp(10),dp(10),dp(10));controls.addView(runtimeView);
+        selfTestView=text("",12,false);selfTestView.setPadding(dp(10),dp(8),dp(10),dp(8));selfTestView.setBackgroundColor(Color.rgb(225,231,235));controls.addView(selfTestView);
         progressView=text("Sin procesamiento activo",13,false);progressView.setPadding(0,dp(12),0,dp(10));controls.addView(progressView);
+        Button selfTest=button("AUTOPRUEBA KERNEL STEP");selfTest.setOnClickListener(v->runSelfTest());controls.addView(selfTest);
         Button processAll=button("PROCESAR TODOS LOS STEP");processAll.setOnClickListener(v->processAll());controls.addView(processAll);
         Button assembly=button("VOLVER A ENSAMBLAJE");assembly.setOnClickListener(v->openAssembly());controls.addView(assembly);
-        TextView note=text("El kernel no escala modelos. Importa, tesela y conserva las dimensiones STEP; CENTRAR/ORIENTAR aplica solo rotación y traslación rígidas.",12,false);note.setPadding(0,dp(14),0,0);controls.addView(note);
+        TextView note=text("El kernel no escala modelos. Importa, tesela y conserva las dimensiones STEP; CENTRAR/ORIENTAR aplica solo rotación y traslación rígidas. Ejecute la autoprueba después de instalar o actualizar la APK.",12,false);note.setPadding(0,dp(14),0,0);controls.addView(note);
 
         ScrollView scroll=new ScrollView(this);listContainer=vertical();listContainer.setPadding(dp(12),dp(6),dp(12),dp(20));scroll.addView(listContainer);
         root.addView(scroll,new LinearLayout.LayoutParams(0,-1,1.55f));
@@ -69,6 +72,7 @@ public final class StepKernelActivity extends Activity {
                 +(runtime.diagnostic==null||runtime.diagnostic.isEmpty()?"":"\n"+runtime.diagnostic));
         runtimeView.setTextColor(runtime.stepReady?Color.rgb(20,115,65):Color.rgb(155,83,0));
         runtimeView.setBackgroundColor(runtime.stepReady?Color.rgb(215,246,226):Color.rgb(255,239,205));
+        selfTestView.setText("ÚLTIMA AUTOPRUEBA\n"+CadKernelSelfTest.lastSummary(this));
         listContainer.removeAllViews();
         List<CadAssemblyStore.Component> steps=stepComponents();
         if(steps.isEmpty()){
@@ -76,6 +80,23 @@ public final class StepKernelActivity extends Activity {
             return;
         }
         for(CadAssemblyStore.Component component:steps)listContainer.addView(card(component));
+    }
+
+    private void runSelfTest(){
+        if(busy){Toast.makeText(this,"Hay otro proceso CAD activo",Toast.LENGTH_SHORT).show();return;}
+        busy=true;progressView.setText("Generando STEP patrón y comprobando OCCT…");refresh();
+        new Thread(new Runnable(){
+            @Override public void run(){
+                final CadKernelSelfTest.Result result=CadKernelSelfTest.run(getApplicationContext());
+                if(destroyed)return;
+                runOnUiThread(new Runnable(){@Override public void run(){
+                    if(destroyed)return;
+                    busy=false;progressView.setText(result.summary());refresh();
+                    Toast.makeText(StepKernelActivity.this,result.success?
+                            "Kernel STEP aprobado":"Autoprueba STEP fallida: revise diagnóstico",Toast.LENGTH_LONG).show();
+                }});
+            }
+        },"cad-kernel-self-test").start();
     }
 
     private LinearLayout card(final CadAssemblyStore.Component component){
@@ -90,7 +111,7 @@ public final class StepKernelActivity extends Activity {
         Button process=button(record!=null&&record.ready()?"RETESSELAR":"PROCESAR");
         process.setEnabled(!busy);process.setOnClickListener(v->processOne(component,null));actions.addView(process,new LinearLayout.LayoutParams(0,-2,1f));
         Button place=button("CENTRAR / ORIENTAR");
-        place.setEnabled(record!=null&&record.ready()&&!component.locked);
+        place.setEnabled(record!=null&&record.ready()&&!component.locked&&!busy);
         place.setOnClickListener(v->autoPlace(component));actions.addView(place,new LinearLayout.LayoutParams(0,-2,1f));
         Button show=button("VER CONJUNTO");show.setOnClickListener(v->openAssembly());actions.addView(show,new LinearLayout.LayoutParams(0,-2,1f));card.addView(actions);
         return card;
