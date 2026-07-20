@@ -61,47 +61,56 @@ jobs:
         run: sh PulleyKnowledgeMvp/tools/run_assembly_constraints_v41_test.sh
       - name: Test STEP rigid centering and axial orientation
         run: sh PulleyKnowledgeMvp/tools/run_step_mesh_placement_v42_test.sh
-      - name: Fetch public STEP-enabled cadcore AAR
+      - name: Fetch verified STEP-enabled cadcore AAR
         run: |
-          mkdir -p PulleyKnowledgeMvp/app/libs artifacts
-          URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v1/freecad-android-cadcore-step-v1.aar"
-          if curl --fail --location --retry 3 --retry-delay 3 "$URL" \
-              --output PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar; then
-            echo "CADCORE_MODE=STEP_ENABLED" >> "$GITHUB_ENV"
-            sha256sum PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar \
-              | tee artifacts/CADCORE_SHA256.txt
+          set -euo pipefail
+          mkdir -p PulleyKnowledgeMvp/app/libs artifacts /tmp/cadcore
+          TARGET=PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar
+          RELEASE_URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v1/freecad-android-cadcore-step-v1.aar"
+          ARTIFACT_URL="https://api.github.com/repos/MedinaParra/FreeCAD-Native/actions/artifacts/8460240379/zip"
+          EXPECTED="7fdb7e01792349427c3df07e7bd23d7bffb8b5631c093506ca18e88fb6881d4c"
+          if curl --fail --location --retry 2 --retry-delay 2 "$RELEASE_URL" --output "$TARGET"; then
+            SOURCE=release
           else
-            rm -f PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar
-            echo "CADCORE_MODE=PARAMETRIC_PREVIEW" >> "$GITHUB_ENV"
-            echo "Public cadcore release is not available yet" | tee artifacts/CADCORE_SHA256.txt
+            rm -f "$TARGET"
+            curl --fail --location --retry 3 --retry-delay 3 \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "$ARTIFACT_URL" --output /tmp/cadcore.zip
+            unzip -q /tmp/cadcore.zip -d /tmp/cadcore
+            cp /tmp/cadcore/freecad-android-cadcore-step-v1.aar "$TARGET"
+            SOURCE=validated-actions-artifact-8460240379
           fi
+          ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
+          test "$ACTUAL" = "$EXPECTED"
+          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=%s\nCADCORE_SHA256=%s\n' \
+            "$SOURCE" "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK
+      - name: Build STEP-enabled debug APK
         run: gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace
-      - name: Verify CAD runtime packaging
+      - name: Verify native STEP runtime packaging
         run: |
+          set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          echo "$CADCORE_MODE" | tee artifacts/CADCORE_MODE.txt
-          if [ "$CADCORE_MODE" = "STEP_ENABLED" ]; then
-            unzip -l "$APK" | grep 'lib/arm64-v8a/libfreecad_android_bridge.so'
-            unzip -l "$APK" | grep 'lib/arm64-v8a/libTKDESTEP.so'
-            unzip -l "$APK" | grep 'lib/arm64-v8a/libTKMesh.so'
-            unzip -l "$APK" | grep 'lib/arm64-v8a/libc++_shared.so'
-            unzip -l "$APK" | grep 'assets/occt/XSTEPResource/'
-          else
-            echo "APK built in parametric preview mode; STEP files remain auditable and pending."
-          fi
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libfreecad_android_bridge.so'
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libTKDESTEP.so'
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libTKXSBase.so'
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libTKBRep.so'
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libTKMesh.so'
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libc++_shared.so'
+          unzip -l "$APK" | grep 'assets/occt/XSTEPResource/'
+          unzip -l "$APK" | grep 'assets/occt/SHMessage/'
       - name: Prepare artifact
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.15.0-alpha16.apk
-          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.15.0-alpha16.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.16.0-alpha17.apk
+          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.16.0-alpha17.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-CAD-STEP-v0.15.0-alpha16
+          name: SKM-Polea-AI-CAD-STEP-v0.16.0-alpha17
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
