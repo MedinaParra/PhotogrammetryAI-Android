@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai'
         minSdk 24
         targetSdk 35
-        versionCode 17
-        versionName '0.16.0-alpha17'
+        versionCode 18
+        versionName '0.17.0-alpha18'
     }
 
     compileOptions {
@@ -21,9 +21,9 @@ android {
 }
 
 dependencies {
-    def cadcoreAar = file('libs/freecad-android-cadcore-step-v1.aar')
+    def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('STEP-enabled cadcore AAR is required for alpha17')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha18')
     }
     implementation files(cadcoreAar)
 }
