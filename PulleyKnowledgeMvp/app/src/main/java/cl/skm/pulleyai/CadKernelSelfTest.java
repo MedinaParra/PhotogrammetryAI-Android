@@ -12,6 +12,7 @@ import java.util.Locale;
 public final class CadKernelSelfTest {
     private static final String PREFS="cad_kernel_self_test";
     private static final String KEY_LAST="last_result";
+    private static final long APPROVAL_MAX_AGE_MS=30L*24L*60L*60L*1000L;
     private CadKernelSelfTest() { }
 
     public static final class Result {
@@ -88,16 +89,40 @@ public final class CadKernelSelfTest {
         }finally{if(file.isFile())file.delete();}
     }
 
+    public static boolean approvedFor(Context context,String runtime){
+        Result result=last(context);
+        if(result==null||!result.success)return false;
+        if(runtime==null||!runtime.equals(result.runtime))return false;
+        if(!StepSelfTestModel.sha256().equalsIgnoreCase(result.sourceSha256))return false;
+        long age=System.currentTimeMillis()-result.completedAt;
+        return age>=0&&age<=APPROVAL_MAX_AGE_MS;
+    }
+
+    public static String approvalDiagnostic(Context context,String runtime){
+        Result result=last(context);
+        if(result==null)return "Autoprueba STEP no ejecutada";
+        if(!result.success)return "Última autoprueba fallida: "+result.diagnostic;
+        if(runtime==null||!runtime.equals(result.runtime))return "El runtime cambió desde la última autoprueba";
+        if(!StepSelfTestModel.sha256().equalsIgnoreCase(result.sourceSha256))return "El patrón de autoprueba cambió";
+        long age=System.currentTimeMillis()-result.completedAt;
+        if(age<0||age>APPROVAL_MAX_AGE_MS)return "Autoprueba vencida; ejecute una nueva validación";
+        return "AUTOPRUEBA APROBADA";
+    }
+
     public static String lastSummary(Context context){
+        Result result=last(context);
+        return result==null?"Autoprueba aún no ejecutada":result.summary();
+    }
+
+    private static Result last(Context context){
         String raw=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY_LAST,null);
-        if(raw==null||raw.isEmpty())return "Autoprueba aún no ejecutada";
+        if(raw==null||raw.isEmpty())return null;
         try{
-            String[] p=raw.split("\\t",-1);if(p.length!=12)return "Registro de autoprueba incompatible";
-            Result result=new Result("1".equals(p[0]),p[1],p[2],p[3],Integer.parseInt(p[4]),
+            String[] p=raw.split("\\t",-1);if(p.length!=12)return null;
+            return new Result("1".equals(p[0]),p[1],p[2],p[3],Integer.parseInt(p[4]),
                     Integer.parseInt(p[5]),Double.parseDouble(p[6]),Double.parseDouble(p[7]),
                     Double.parseDouble(p[8]),Double.parseDouble(p[9]),Long.parseLong(p[10]),Long.parseLong(p[11]));
-            return result.summary();
-        }catch(Exception ignored){return "Registro de autoprueba corrupto";}
+        }catch(Exception ignored){return null;}
     }
 
     private static void save(Context context,Result result){
