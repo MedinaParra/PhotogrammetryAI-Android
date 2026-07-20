@@ -54,7 +54,7 @@ public final class StepKernelActivity extends Activity {
         progressView=text("Sin procesamiento activo",13,false);progressView.setPadding(0,dp(12),0,dp(10));controls.addView(progressView);
         Button processAll=button("PROCESAR TODOS LOS STEP");processAll.setOnClickListener(v->processAll());controls.addView(processAll);
         Button assembly=button("VOLVER A ENSAMBLAJE");assembly.setOnClickListener(v->openAssembly());controls.addView(assembly);
-        TextView note=text("El kernel no escala modelos. Importa, tesela y conserva las dimensiones STEP; la superposición usa únicamente rotación y traslación.",12,false);note.setPadding(0,dp(14),0,0);controls.addView(note);
+        TextView note=text("El kernel no escala modelos. Importa, tesela y conserva las dimensiones STEP; CENTRAR/ORIENTAR aplica solo rotación y traslación rígidas.",12,false);note.setPadding(0,dp(14),0,0);controls.addView(note);
 
         ScrollView scroll=new ScrollView(this);listContainer=vertical();listContainer.setPadding(dp(12),dp(6),dp(12),dp(20));scroll.addView(listContainer);
         root.addView(scroll,new LinearLayout.LayoutParams(0,-1,1.55f));
@@ -89,8 +89,24 @@ public final class StepKernelActivity extends Activity {
         LinearLayout actions=new LinearLayout(this);actions.setOrientation(LinearLayout.HORIZONTAL);actions.setGravity(Gravity.CENTER_VERTICAL);
         Button process=button(record!=null&&record.ready()?"RETESSELAR":"PROCESAR");
         process.setEnabled(!busy);process.setOnClickListener(v->processOne(component,null));actions.addView(process,new LinearLayout.LayoutParams(0,-2,1f));
+        Button place=button("CENTRAR / ORIENTAR");
+        place.setEnabled(record!=null&&record.ready()&&!component.locked);
+        place.setOnClickListener(v->autoPlace(component));actions.addView(place,new LinearLayout.LayoutParams(0,-2,1f));
         Button show=button("VER CONJUNTO");show.setOnClickListener(v->openAssembly());actions.addView(show,new LinearLayout.LayoutParams(0,-2,1f));card.addView(actions);
         return card;
+    }
+
+    private void autoPlace(CadAssemblyStore.Component component){
+        try{
+            CadMeshCache.Mesh mesh=meshCache.load(component.id);
+            if(mesh==null)throw new IllegalStateException("Primero procese el STEP");
+            StepMeshPlacementCore.Suggestion suggestion=StepMeshPlacementCore.suggest(component.type.name(),mesh.bounds);
+            assemblyStore.updateTransform(component.id,suggestion.tx,suggestion.ty,suggestion.tz,
+                    suggestion.rx,suggestion.ry,suggestion.rz);
+            progressView.setText(component.name+": "+suggestion.reason+" · "+suggestion.axis);
+            Toast.makeText(this,"Transformación rígida aplicada. Revise la superposición antes de bloquear la pieza.",Toast.LENGTH_LONG).show();
+            refresh();
+        }catch(Exception error){Toast.makeText(this,"No se pudo autoorientar: "+error.getMessage(),Toast.LENGTH_LONG).show();}
     }
 
     private void processAll(){
