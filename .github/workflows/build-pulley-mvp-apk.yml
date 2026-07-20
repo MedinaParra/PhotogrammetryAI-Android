@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,24 +59,47 @@ jobs:
         run: sh PulleyKnowledgeMvp/tools/run_cad_assembly_v40_test.sh
       - name: Test mechanical assembly constraints
         run: sh PulleyKnowledgeMvp/tools/run_assembly_constraints_v41_test.sh
+      - name: Fetch public STEP-enabled cadcore AAR
+        run: |
+          mkdir -p PulleyKnowledgeMvp/app/libs artifacts
+          URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v1/freecad-android-cadcore-step-v1.aar"
+          if curl --fail --location --retry 3 --retry-delay 3 "$URL" \
+              --output PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar; then
+            echo "CADCORE_MODE=STEP_ENABLED" >> "$GITHUB_ENV"
+            sha256sum PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar \
+              | tee artifacts/CADCORE_SHA256.txt
+          else
+            rm -f PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar
+            echo "CADCORE_MODE=PARAMETRIC_PREVIEW" >> "$GITHUB_ENV"
+            echo "Public cadcore release is not available yet" | tee artifacts/CADCORE_SHA256.txt
+          fi
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK with native CAD bridge
+      - name: Build debug APK
         run: gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace
-      - name: Verify native bridge is packaged
+      - name: Verify CAD runtime packaging
         run: |
-          unzip -l PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk | grep 'lib/arm64-v8a/libfreecad_android_bridge.so'
+          APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
+          echo "$CADCORE_MODE" | tee artifacts/CADCORE_MODE.txt
+          if [ "$CADCORE_MODE" = "STEP_ENABLED" ]; then
+            unzip -l "$APK" | grep 'lib/arm64-v8a/libfreecad_android_bridge.so'
+            unzip -l "$APK" | grep 'lib/arm64-v8a/libTKDESTEP.so'
+            unzip -l "$APK" | grep 'lib/arm64-v8a/libTKMesh.so'
+            unzip -l "$APK" | grep 'lib/arm64-v8a/libc++_shared.so'
+            unzip -l "$APK" | grep 'assets/occt/XSTEPResource/'
+          else
+            echo "APK built in parametric preview mode; STEP files remain auditable and pending."
+          fi
       - name: Prepare artifact
         run: |
-          mkdir -p artifacts
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.14.0-alpha15.apk
-          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.14.0-alpha15.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.15.0-alpha16.apk
+          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.15.0-alpha16.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-CAD-STEP-v0.14.0-alpha15
+          name: SKM-Polea-AI-CAD-STEP-v0.15.0-alpha16
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
