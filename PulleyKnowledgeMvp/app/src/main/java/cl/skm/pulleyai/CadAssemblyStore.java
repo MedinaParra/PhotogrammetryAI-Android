@@ -17,41 +17,16 @@ public final class CadAssemblyStore extends SQLiteOpenHelper {
     private static final int DB_VERSION = 1;
     private final Context appContext;
 
-    public enum Type {
-        SHELL,
-        SHAFT,
-        SUPPORT,
-        LOCKING_SLEEVE,
-        BEARING,
-        HUB,
-        COUPLING,
-        STEP_OTHER
-    }
-
-    public enum SourceKind {
-        PARAMETRIC,
-        STEP
-    }
+    public enum Type { SHELL, SHAFT, SUPPORT, LOCKING_SLEEVE, BEARING, HUB, COUPLING, STEP_OTHER }
+    public enum SourceKind { PARAMETRIC, STEP }
 
     public static final class Component {
-        public final String id;
-        public final String assemblyId;
+        public final String id, assemblyId, name, sourcePath, sourceSha256, kernelStatus;
         public final Type type;
         public final SourceKind sourceKind;
-        public final String name;
-        public final String sourcePath;
-        public final String sourceSha256;
-        public final String kernelStatus;
-        public final double lengthMm;
-        public final double diameterMm;
-        public final double widthMm;
-        public final double heightMm;
-        public final double depthMm;
-        public final double boreMm;
-        public final double txMm, tyMm, tzMm;
-        public final double rxDeg, ryDeg, rzDeg;
-        public final boolean visible;
-        public final boolean locked;
+        public final double lengthMm, diameterMm, widthMm, heightMm, depthMm, boreMm;
+        public final double txMm, tyMm, tzMm, rxDeg, ryDeg, rzDeg;
+        public final boolean visible, locked;
         public final int colorArgb;
 
         Component(String id, String assemblyId, Type type, SourceKind sourceKind,
@@ -72,8 +47,7 @@ public final class CadAssemblyStore extends SQLiteOpenHelper {
         }
 
         public boolean renderableParametric() {
-            return sourceKind == SourceKind.PARAMETRIC && lengthMm > 0
-                    || sourceKind == SourceKind.PARAMETRIC && widthMm > 0;
+            return sourceKind == SourceKind.PARAMETRIC && (lengthMm > 0 || widthMm > 0);
         }
     }
 
@@ -116,9 +90,8 @@ public final class CadAssemblyStore extends SQLiteOpenHelper {
         String stableSession = clean(sessionId, "standalone");
         Cursor cursor = getReadableDatabase().query("assembly", new String[]{"id"},
                 "session_id=?", new String[]{stableSession}, null, null, null, "1");
-        try {
-            if (cursor.moveToFirst()) return cursor.getString(0);
-        } finally { cursor.close(); }
+        try { if (cursor.moveToFirst()) return cursor.getString(0); }
+        finally { cursor.close(); }
         String id = UUID.randomUUID().toString();
         long now = System.currentTimeMillis();
         ContentValues row = new ContentValues();
@@ -173,6 +146,21 @@ public final class CadAssemblyStore extends SQLiteOpenHelper {
         ContentValues row=new ContentValues();row.put("tx_mm",tx);row.put("ty_mm",ty);row.put("tz_mm",tz);
         row.put("rx_deg",normalizeAngle(rx));row.put("ry_deg",normalizeAngle(ry));row.put("rz_deg",normalizeAngle(rz));
         row.put("updated_at",System.currentTimeMillis());getWritableDatabase().update("component",row,"id=?",new String[]{id});
+    }
+
+    public void updateKernelStatus(String id, String status) {
+        ContentValues row=new ContentValues();
+        row.put("kernel_status",clean(status,"STEP_PENDIENTE_KERNEL"));
+        row.put("updated_at",System.currentTimeMillis());
+        getWritableDatabase().update("component",row,"id=?",new String[]{id});
+    }
+
+    public void updateAlignmentStatus(String assemblyId, String status) {
+        ContentValues row=new ContentValues();
+        row.put("alignment_status",clean(status,"UNALIGNED"));
+        row.put("core_backend",FreeCadNativeBridge.status().label());
+        row.put("updated_at",System.currentTimeMillis());
+        getWritableDatabase().update("assembly",row,"id=?",new String[]{assemblyId});
     }
 
     public void setVisible(String id,boolean visible) { updateFlag(id,"visible",visible); }
