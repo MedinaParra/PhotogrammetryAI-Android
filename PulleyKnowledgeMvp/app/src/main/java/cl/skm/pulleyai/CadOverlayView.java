@@ -10,13 +10,17 @@ import android.view.MotionEvent;
 import android.view.View;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
-/** Lightweight engineering overlay for parametric parts and qualified shell geometry. */
+/** Engineering overlay for reconstructed shell, parametric parts and native STEP meshes. */
 public final class CadOverlayView extends View {
+    private static final int MAX_WIREFRAME_TRIANGLES=5000;
     private final Paint line=new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint text=new Paint(Paint.ANTI_ALIAS_FLAG);
     private List<CadAssemblyStore.Component> components=new ArrayList<CadAssemblyStore.Component>();
+    private Map<String,CadMeshCache.Mesh> nativeMeshes=Collections.emptyMap();
     private Double referenceLengthMm;
     private Double referenceDiameterMm;
     private double viewYawDeg=-28;
@@ -35,13 +39,25 @@ public final class CadOverlayView extends View {
 
     public void setAssembly(List<CadAssemblyStore.Component> components,
                             Double referenceLengthMm,Double referenceDiameterMm) {
+        setAssembly(components,referenceLengthMm,referenceDiameterMm,Collections.<String,CadMeshCache.Mesh>emptyMap());
+    }
+
+    public void setAssembly(List<CadAssemblyStore.Component> components,
+                            Double referenceLengthMm,Double referenceDiameterMm,
+                            Map<String,CadMeshCache.Mesh> nativeMeshes) {
         this.components=components==null?new ArrayList<CadAssemblyStore.Component>()
                 :new ArrayList<CadAssemblyStore.Component>(components);
-        this.referenceLengthMm=referenceLengthMm;this.referenceDiameterMm=referenceDiameterMm;
+        this.referenceLengthMm=referenceLengthMm;
+        this.referenceDiameterMm=referenceDiameterMm;
+        this.nativeMeshes=nativeMeshes==null?Collections.<String,CadMeshCache.Mesh>emptyMap():nativeMeshes;
         autoFit();invalidate();
     }
 
     public void resetView(){viewYawDeg=-28;viewPitchDeg=18;autoFit();invalidate();}
+
+    @Override protected void onSizeChanged(int width,int height,int oldWidth,int oldHeight){
+        super.onSizeChanged(width,height,oldWidth,oldHeight);autoFit();
+    }
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -59,10 +75,18 @@ public final class CadOverlayView extends View {
         }
 
         int pending=0;
+        int renderedStep=0;
         for(CadAssemblyStore.Component component:components){
             if(!component.visible)continue;
-            if(component.sourceKind==CadAssemblyStore.SourceKind.STEP){pending++;continue;}
             line.setColor(component.colorArgb);line.setStrokeWidth(dp(component.locked?2.6f:1.7f));
+            if(component.sourceKind==CadAssemblyStore.SourceKind.STEP){
+                CadMeshCache.Mesh mesh=nativeMeshes.get(component.id);
+                if(mesh==null){pending++;continue;}
+                Paint stepPaint=new Paint(line);stepPaint.setAlpha(component.locked?235:205);
+                drawMesh(canvas,mesh,component,stepPaint);
+                renderedStep++;
+                continue;
+            }
             if(isCylinder(component.type)){
                 drawCylinder(canvas,component.lengthMm,component.diameterMm,
                         component.txMm,component.tyMm,component.tzMm,
@@ -79,9 +103,10 @@ public final class CadOverlayView extends View {
                         component.rxDeg,component.ryDeg,component.rzDeg,line);
             }
         }
-        if(pending>0){
-            text.setColor(Color.rgb(255,190,95));
-            canvas.drawText(pending+" STEP registrado(s), esperando kernel nativo",dp(12),getHeight()-dp(14),text);
+        if(pending>0||renderedStep>0){
+            text.setColor(pending>0?Color.rgb(255,190,95):Color.rgb(120,220,245));
+            String label=renderedStep+" STEP teselado(s)"+(pending>0?" · "+pending+" pendiente(s)":"");
+            canvas.drawText(label,dp(12),getHeight()-dp(14),text);
         }
         drawAxis(canvas);
     }
@@ -94,7 +119,7 @@ public final class CadOverlayView extends View {
                 if(event.getPointerCount()>=2)pinchDistance=distance(event);return true;
             case MotionEvent.ACTION_MOVE:
                 if(event.getPointerCount()>=2){
-                    double current=distance(event);if(pinchDistance>10&&current>10){zoom*=current/pinchDistance;zoom=Math.max(0.015,Math.min(4.0,zoom));}
+                    double current=distance(event);if(pinchDistance>10&&current>10){zoom*=current/pinchDistance;zoom=Math.max(0.002,Math.min(8.0,zoom));}
                     pinchDistance=current;invalidate();return true;
                 }
                 if(dragging){float x=event.getX(),y=event.getY();viewYawDeg+=(x-lastX)*0.35;viewPitchDeg+=(y-lastY)*0.30;
@@ -118,6 +143,24 @@ public final class CadOverlayView extends View {
         axis.setColor(Color.rgb(245,90,90));drawSegment(canvas,new double[]{0,0,0},new double[]{600,0,0},axis);
         axis.setColor(Color.rgb(90,220,120));drawSegment(canvas,new double[]{0,0,0},new double[]{0,600,0},axis);
         axis.setColor(Color.rgb(90,150,245));drawSegment(canvas,new double[]{0,0,0},new double[]{0,0,600},axis);
+    }
+
+    private void drawMesh(Canvas canvas,CadMeshCache.Mesh mesh,
+                          CadAssemblyStore.Component component,Paint paint){
+        int triangleCount=mesh.triangleCount();
+        int stride=Math.max(1,(int)Math.ceil((double)triangleCount/MAX_WIREFRAME_TRIANGLES));
+        int[] indices=mesh.triangles;float[] vertices=mesh.vertices;
+        Path path=new Path();
+        for(int triangle=0;triangle<triangleCount;triangle+=stride){
+            int offset=triangle*3;
+            int ia=indices[offset]*3,ib=indices[offset+1]*3,ic=indices[offset+2]*3;
+            double[] a=transform(vertices[ia],vertices[ia+1],vertices[ia+2],component.txMm,component.tyMm,component.tzMm,component.rxDeg,component.ryDeg,component.rzDeg);
+            double[] b=transform(vertices[ib],vertices[ib+1],vertices[ib+2],component.txMm,component.tyMm,component.tzMm,component.rxDeg,component.ryDeg,component.rzDeg);
+            double[] c=transform(vertices[ic],vertices[ic+1],vertices[ic+2],component.txMm,component.tyMm,component.tzMm,component.rxDeg,component.ryDeg,component.rzDeg);
+            float[] pa=project(a),pb=project(b),pc=project(c);
+            path.moveTo(pa[0],pa[1]);path.lineTo(pb[0],pb[1]);path.lineTo(pc[0],pc[1]);path.close();
+        }
+        canvas.drawPath(path,paint);
     }
 
     private void drawCylinder(Canvas canvas,double length,double diameter,
@@ -166,10 +209,17 @@ public final class CadOverlayView extends View {
         return new float[]{(float)(getWidth()/2.0+x*zoom*perspective),(float)(getHeight()/2.0-y*zoom*perspective)};
     }
 
-    private void autoFit(){double max=1000;
-        if(referenceLengthMm!=null)max=Math.max(max,referenceLengthMm);if(referenceDiameterMm!=null)max=Math.max(max,referenceDiameterMm);
-        for(CadAssemblyStore.Component c:components)max=Math.max(max,Math.max(c.lengthMm,Math.max(c.diameterMm,Math.max(c.widthMm,Math.max(c.heightMm,c.depthMm))))+Math.abs(c.txMm)+Math.abs(c.tyMm)+Math.abs(c.tzMm));
-        if(getWidth()>0&&getHeight()>0)zoom=Math.max(0.015,Math.min(2.5,0.72*Math.min(getWidth(),getHeight())/max));
+    private void autoFit(){
+        double max=1000;
+        if(referenceLengthMm!=null)max=Math.max(max,referenceLengthMm);
+        if(referenceDiameterMm!=null)max=Math.max(max,referenceDiameterMm);
+        for(CadAssemblyStore.Component c:components){
+            double extent=Math.max(c.lengthMm,Math.max(c.diameterMm,Math.max(c.widthMm,Math.max(c.heightMm,c.depthMm))));
+            CadMeshCache.Mesh mesh=nativeMeshes.get(c.id);
+            if(mesh!=null){extent=Math.max(extent,Math.max(mesh.bounds[3]-mesh.bounds[0],Math.max(mesh.bounds[4]-mesh.bounds[1],mesh.bounds[5]-mesh.bounds[2])));}
+            max=Math.max(max,extent+Math.abs(c.txMm)+Math.abs(c.tyMm)+Math.abs(c.tzMm));
+        }
+        if(getWidth()>0&&getHeight()>0)zoom=Math.max(0.002,Math.min(5.0,0.72*Math.min(getWidth(),getHeight())/max));
     }
 
     private static boolean isCylinder(CadAssemblyStore.Type type){return type!=CadAssemblyStore.Type.SUPPORT&&type!=CadAssemblyStore.Type.STEP_OTHER;}
