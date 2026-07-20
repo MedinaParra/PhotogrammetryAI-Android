@@ -12,13 +12,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
-/** Bounded reconstruction orchestrator: selection, budget, geometry, tracks, global cloud and metric shell. */
+/** Bounded reconstruction: balanced frames, calibrated geometry, orbit scale, global cloud and metric shell. */
 public final class SessionOverlapAnalyzer {
     private static final int ANALYSIS_WIDTH = 640;
     private static final int ANALYSIS_HEIGHT = 480;
@@ -35,15 +33,15 @@ public final class SessionOverlapAnalyzer {
         if (session == null) throw new IllegalStateException("Sesión inexistente");
         FramePlan framePlan = planFrames(store.frames(sessionId));
         int candidatePairs = countCandidatePairs(framePlan.frames);
-        long availableMemory = availableMemoryBytes();
-        long freeStorage = store.sessionDir(sessionId).getUsableSpace();
         IndustrialAnalysisBudgetCore.Result budget = IndustrialAnalysisBudgetCore.evaluate(
                 framePlan.frames.size(), ANALYSIS_WIDTH, ANALYSIS_HEIGHT,
-                FEATURES_PER_FRAME, candidatePairs, availableMemory, freeStorage);
+                FEATURES_PER_FRAME, candidatePairs, availableMemoryBytes(),
+                store.sessionDir(sessionId).getUsableSpace());
         if (!framePlan.selection.ready() || !budget.ready()) {
             Report blocked = Report.blocked(framePlan.selection, budget,
                     framePlan.frames.size(), candidatePairs);
-            persist(store, sessionId, blocked, "RESOURCE_BLOCKED", false, 0, 0);
+            persist(context, store, sessionId, blocked,
+                    "RESOURCE_BLOCKED", false, 0, 0);
             return blocked;
         }
 
@@ -67,6 +65,7 @@ public final class SessionOverlapAnalyzer {
         int strongPairs = 0;
         int usablePairs = 0;
         int localPointCount = 0;
+        int missingOrbitPriors = 0;
         for (CachedFrame frame : frames) if (!frame.intrinsics.available) missingIntrinsics++;
 
         for (int left=0; left<frames.size(); left++) {
@@ -79,6 +78,7 @@ public final class SessionOverlapAnalyzer {
                 localEdges.add(new ViewGraphCore.Edge(left, right, usable, strong));
                 if (usable) usablePairs++;
                 if (strong) strongPairs++;
+                if (!solution.report.orbitPriorReady) missingOrbitPriors++;
                 localPointCount += solution.report.triangulatedPoints;
                 trackEdges.addAll(solution.trackEdges);
                 pairPoints.addAll(solution.points);
@@ -99,18 +99,21 @@ public final class SessionOverlapAnalyzer {
         PulleyShellRansacCore.Result shell = fitShell(cloud);
         PulleyMetricScaleCore.Result metric =
                 PulleyMetricScaleCore.resolve(shell, session.shellLengthMm);
-        boolean globalReady = localReady && tracks.ready() && poseGraph.ready() && cloud.ready();
+        boolean globalReady = localReady && tracks.ready() && poseGraph.ready()
+                && cloud.ready() && missingOrbitPriors <= Math.max(2, pairs.size()/5);
         boolean modelReady = globalReady && shell.ready() && metric.ready();
         String status = modelReady ? "METRIC_SHELL_READY"
                 : globalReady ? "GLOBAL_SPARSE_READY"
                 : missingIntrinsics > 0 ? "INTRINSICS_MISSING"
+                : missingOrbitPriors > Math.max(2, pairs.size()/5) ? "ORBIT_PRIOR_INCOMPLETE"
                 : localReady ? "GLOBAL_INCOMPLETE" : localGraph.status;
 
         Report report = new Report(framePlan.selection, budget, frames.size(),
                 candidatePairs, pairs, strongPairs, usablePairs, requiredPairs,
-                missingIntrinsics, localPointCount, localGraph, tracks, poseGraph,
-                cloud, shell, metric, localReady, globalReady, modelReady, null);
-        persist(store, sessionId, report, status, globalReady,
+                missingIntrinsics, missingOrbitPriors, localPointCount, localGraph,
+                tracks, poseGraph, cloud, shell, metric,
+                localReady, globalReady, modelReady, null);
+        persist(context, store, sessionId, report, status, globalReady,
                 usablePairs, localGraph.components);
         return report;
     }
@@ -160,7 +163,9 @@ public final class SessionOverlapAnalyzer {
     private static int countCandidatePairs(List<CaptureStore.Frame> frames) {
         int count = 0;
         for (int i=0;i<frames.size();i++) {
-            for (int j=i+1;j<frames.size();j++) if (candidate(frames.get(i), frames.get(j))) count++;
+            for (int j=i+1;j<frames.size();j++) {
+                if (candidate(frames.get(i), frames.get(j))) count++;
+            }
         }
         return count;
     }
@@ -194,13 +199,19 @@ public final class SessionOverlapAnalyzer {
                 : SparseTriangulationCore.Result.failed("POSE_NOT_USABLE");
         boolean cloudUsable = cloud.solved
                 && ("STRONG".equals(cloud.status) || "USABLE".equals(cloud.status));
+        OrbitBaselinePriorCore.Result orbit = OrbitBaselinePriorCore.resolve(
+                left.source.yaw, right.source.yaw,
+                left.source.pitch, right.source.pitch,
+                left.source.band, right.source.band);
+        double pairScale = orbit.ready() ? orbit.baselineUnits : 1.0;
         String status = "STRONG".equals(cloud.status) ? "STRONG"
                 : cloudUsable ? "USABLE" : "WEAK";
         Pair report = new Pair(left.source.sequence, right.source.sequence,
                 descriptors.matches.size(), fundamental.solved ? fundamental.inliers.size() : 0,
                 fundamental.solved ? fundamental.rmsPx : Double.POSITIVE_INFINITY,
                 pose.status, pose.rotationDegrees, pose.medianParallaxDegrees,
-                cloud.status, cloud.points.size(), cloud.rmsReprojectionPx, status);
+                cloud.status, cloud.points.size(), cloud.rmsReprojectionPx,
+                orbit.status, orbit.ready(), orbit.baselineUnits, orbit.confidence, status);
         List<MultiViewTrackCore.MatchEdge> trackEdges =
                 new ArrayList<MultiViewTrackCore.MatchEdge>();
         List<PairPoint> points = new ArrayList<PairPoint>();
@@ -213,13 +224,15 @@ public final class SessionOverlapAnalyzer {
             trackEdges.add(new MultiViewTrackCore.MatchEdge(
                     leftFrame, match.leftIndex, rightFrame, match.rightIndex, confidence));
             points.add(new PairPoint(leftFrame, match.leftIndex,
-                    rightFrame, match.rightIndex, point));
+                    rightFrame, match.rightIndex, pairScale, point));
         }
-        GlobalPoseGraphCore.Edge poseEdge = cloudUsable
+        double[] scaledTranslation = orbit.ready()
+                ? OrbitBaselinePriorCore.scaleDirection(pose.translation, orbit) : null;
+        GlobalPoseGraphCore.Edge poseEdge = cloudUsable && scaledTranslation != null
                 ? new GlobalPoseGraphCore.Edge(leftFrame, rightFrame,
-                pose.rotation, pose.translation, Math.max(0.10,
+                pose.rotation, scaledTranslation, Math.max(0.10,
                 fundamental.inlierRatio*Math.min(1.0, pose.medianParallaxDegrees/2.0)
-                        /(1.0+cloud.rmsReprojectionPx)))
+                        *orbit.confidence/(1.0+cloud.rmsReprojectionPx)))
                 : null;
         return new PairSolution(report, trackEdges, points, poseEdge);
     }
@@ -246,7 +259,7 @@ public final class SessionOverlapAnalyzer {
             if (track == null || point.leftFrame >= poses.poses.size()) continue;
             GlobalPoseGraphCore.Pose pose = poses.poses.get(point.leftFrame);
             if (pose == null) continue;
-            double[] world = toWorld(pose, point.point);
+            double[] world = toWorld(pose, point.point, point.pairScale);
             samples.add(new GlobalSparseCloudCore.Sample(track,
                     world[0], world[1], world[2], point.point.reprojectionErrorPx));
         }
@@ -262,21 +275,30 @@ public final class SessionOverlapAnalyzer {
         return PulleyShellRansacCore.fit(points, 900);
     }
 
-    private static void persist(CaptureStore store, String sessionId, Report report,
-                                String status, boolean ready, int usablePairs,
-                                int components) throws Exception {
+    private static void persist(Context context, CaptureStore store, String sessionId,
+                                Report report, String status, boolean ready,
+                                int usablePairs, int components) throws Exception {
         File output = new File(store.sessionDir(sessionId), "overlap_report.json");
         try (FileOutputStream stream = new FileOutputStream(output)) {
             stream.write(report.toJson().getBytes(StandardCharsets.UTF_8));
         }
         store.saveOverlapResult(sessionId, status, ready, usablePairs, components);
+        if (context != null) {
+            ReconstructionResultStore resultStore = new ReconstructionResultStore(context);
+            try {
+                resultStore.save(sessionId, report, output.getAbsolutePath());
+            } finally {
+                resultStore.close();
+            }
+        }
     }
 
     private static double[] toWorld(GlobalPoseGraphCore.Pose pose,
-                                    SparseTriangulationCore.Point3 point) {
-        double x=point.x-pose.translation[0];
-        double y=point.y-pose.translation[1];
-        double z=point.z-pose.translation[2];
+                                    SparseTriangulationCore.Point3 point,
+                                    double pairScale) {
+        double x=point.x*pairScale-pose.translation[0];
+        double y=point.y*pairScale-pose.translation[1];
+        double z=point.z*pairScale-pose.translation[2];
         double[][] r=pose.rotation;
         return new double[]{r[0][0]*x+r[1][0]*y+r[2][0]*z,
                 r[0][1]*x+r[1][1]*y+r[2][1]*z,
@@ -356,11 +378,13 @@ public final class SessionOverlapAnalyzer {
     }
     private static final class PairPoint {
         final int leftFrame,leftFeature,rightFrame,rightFeature;
+        final double pairScale;
         final SparseTriangulationCore.Point3 point;
         PairPoint(int leftFrame,int leftFeature,int rightFrame,int rightFeature,
-                  SparseTriangulationCore.Point3 point) {
+                  double pairScale,SparseTriangulationCore.Point3 point) {
             this.leftFrame=leftFrame;this.leftFeature=leftFeature;
-            this.rightFrame=rightFrame;this.rightFeature=rightFeature;this.point=point;
+            this.rightFrame=rightFrame;this.rightFeature=rightFeature;
+            this.pairScale=pairScale;this.point=point;
         }
     }
     private static final class PairSolution {
@@ -377,17 +401,22 @@ public final class SessionOverlapAnalyzer {
     public static final class Pair {
         public final int leftSequence,rightSequence,rawMatches,inliers,triangulatedPoints;
         public final double epipolarRmsPx,rotationDegrees,parallaxDegrees,reprojectionRmsPx;
-        public final String poseStatus,cloudStatus,status;
+        public final String poseStatus,cloudStatus,orbitStatus,status;
+        public final boolean orbitPriorReady;
+        public final double orbitBaselineUnits,orbitConfidence;
         Pair(int leftSequence,int rightSequence,int rawMatches,int inliers,
              double epipolarRmsPx,String poseStatus,double rotationDegrees,
              double parallaxDegrees,String cloudStatus,int triangulatedPoints,
-             double reprojectionRmsPx,String status) {
+             double reprojectionRmsPx,String orbitStatus,boolean orbitPriorReady,
+             double orbitBaselineUnits,double orbitConfidence,String status) {
             this.leftSequence=leftSequence;this.rightSequence=rightSequence;
             this.rawMatches=rawMatches;this.inliers=inliers;this.epipolarRmsPx=epipolarRmsPx;
             this.poseStatus=poseStatus;this.rotationDegrees=rotationDegrees;
             this.parallaxDegrees=parallaxDegrees;this.cloudStatus=cloudStatus;
-            this.triangulatedPoints=triangulatedPoints;
-            this.reprojectionRmsPx=reprojectionRmsPx;this.status=status;
+            this.triangulatedPoints=triangulatedPoints;this.reprojectionRmsPx=reprojectionRmsPx;
+            this.orbitStatus=orbitStatus;this.orbitPriorReady=orbitPriorReady;
+            this.orbitBaselineUnits=orbitBaselineUnits;this.orbitConfidence=orbitConfidence;
+            this.status=status;
         }
         boolean usable(){return "STRONG".equals(status)||"USABLE".equals(status);}
     }
@@ -396,7 +425,7 @@ public final class SessionOverlapAnalyzer {
         public final ReconstructionFrameSelectorCore.Result selection;
         public final IndustrialAnalysisBudgetCore.Result budget;
         public final int analyzedFrames,candidatePairs,strongPairs,usablePairs,requiredPairs;
-        public final int missingIntrinsicsFrames,totalTriangulatedPoints;
+        public final int missingIntrinsicsFrames,missingOrbitPriors,totalTriangulatedPoints;
         public final List<Pair> pairs;
         public final ViewGraphCore.Result localGraph;
         public final MultiViewTrackCore.Result tracks;
@@ -410,16 +439,17 @@ public final class SessionOverlapAnalyzer {
         Report(ReconstructionFrameSelectorCore.Result selection,
                IndustrialAnalysisBudgetCore.Result budget,int analyzedFrames,
                int candidatePairs,List<Pair> pairs,int strongPairs,int usablePairs,
-               int requiredPairs,int missingIntrinsicsFrames,int totalTriangulatedPoints,
-               ViewGraphCore.Result localGraph,MultiViewTrackCore.Result tracks,
-               GlobalPoseGraphCore.Result globalPoseGraph,
-               GlobalSparseCloudCore.Result globalCloud,
-               PulleyShellRansacCore.Result shell,PulleyMetricScaleCore.Result metric,
-               boolean localReady,boolean ready,boolean modelReady,String blocker) {
+               int requiredPairs,int missingIntrinsicsFrames,int missingOrbitPriors,
+               int totalTriangulatedPoints,ViewGraphCore.Result localGraph,
+               MultiViewTrackCore.Result tracks,GlobalPoseGraphCore.Result globalPoseGraph,
+               GlobalSparseCloudCore.Result globalCloud,PulleyShellRansacCore.Result shell,
+               PulleyMetricScaleCore.Result metric,boolean localReady,boolean ready,
+               boolean modelReady,String blocker) {
             this.selection=selection;this.budget=budget;this.analyzedFrames=analyzedFrames;
             this.candidatePairs=candidatePairs;this.pairs=Collections.unmodifiableList(new ArrayList<Pair>(pairs));
             this.strongPairs=strongPairs;this.usablePairs=usablePairs;this.requiredPairs=requiredPairs;
             this.missingIntrinsicsFrames=missingIntrinsicsFrames;
+            this.missingOrbitPriors=missingOrbitPriors;
             this.totalTriangulatedPoints=totalTriangulatedPoints;this.localGraph=localGraph;
             this.tracks=tracks;this.globalPoseGraph=globalPoseGraph;this.globalCloud=globalCloud;
             this.shell=shell;this.metric=metric;this.localReady=localReady;
@@ -442,13 +472,15 @@ public final class SessionOverlapAnalyzer {
             PulleyMetricScaleCore.Result metric=PulleyMetricScaleCore.resolve(shell,null);
             String reason=!selection.ready()?selection.summary():budget.summary();
             return new Report(selection,budget,frames,pairs,new ArrayList<Pair>(),0,0,0,
-                    0,0,graph,tracks,poses,cloud,shell,metric,false,false,false,reason);
+                    0,0,0,graph,tracks,poses,cloud,shell,metric,
+                    false,false,false,reason);
         }
 
         public String summary() {
             if(blocker!=null)return "Análisis bloqueado\n"+blocker+"\n"+budget.summary();
             return selection.summary()+" · pares "+candidatePairs+"\n"+budget.summary()
                     +"\nAristas "+usablePairs+"/"+requiredPairs+" · puntos "+totalTriangulatedPoints
+                    +" · prior órbita faltante "+missingOrbitPriors
                     +"\n"+tracks.summary()+"\n"+globalPoseGraph.summary()
                     +"\n"+globalCloud.summary()+"\n"+shell.summary()+"\n"+metric.summary()
                     +(modelReady?"\nMANTO MÉTRICO APROBADO"
@@ -458,13 +490,14 @@ public final class SessionOverlapAnalyzer {
 
         String toJson() {
             StringBuilder json=new StringBuilder(4096+pairs.size()*220);
-            json.append("{\n\"schema\":\"skm-polea-bounded-reconstruction/1\"")
+            json.append("{\n\"schema\":\"skm-polea-orbit-scaled/1\"")
                     .append(",\n\"selectionStatus\":\"").append(selection.status).append("\"")
                     .append(",\n\"selectedFrames\":").append(analyzedFrames)
                     .append(",\n\"discardedFrames\":").append(selection.discarded)
                     .append(",\n\"budgetTier\":\"").append(budget.tier).append("\"")
                     .append(",\n\"estimatedBytes\":").append(budget.estimatedBytes)
                     .append(",\n\"candidatePairs\":").append(candidatePairs)
+                    .append(",\n\"missingOrbitPriors\":").append(missingOrbitPriors)
                     .append(",\n\"blocker\":").append(blocker==null?"null":"\""+escape(blocker)+"\"")
                     .append(",\n\"strongPairs\":").append(strongPairs)
                     .append(",\n\"usablePairs\":").append(usablePairs)
