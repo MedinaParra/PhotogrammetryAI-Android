@@ -61,30 +61,19 @@ jobs:
         run: sh PulleyKnowledgeMvp/tools/run_assembly_constraints_v41_test.sh
       - name: Test STEP rigid centering and axial orientation
         run: sh PulleyKnowledgeMvp/tools/run_step_mesh_placement_v42_test.sh
-      - name: Fetch verified STEP-enabled cadcore AAR
+      - name: Fetch verified STEP-enabled cadcore release
         run: |
           set -euo pipefail
-          mkdir -p PulleyKnowledgeMvp/app/libs artifacts /tmp/cadcore
+          mkdir -p PulleyKnowledgeMvp/app/libs artifacts
           TARGET=PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar
           RELEASE_URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v1/freecad-android-cadcore-step-v1.aar"
-          ARTIFACT_URL="https://api.github.com/repos/MedinaParra/FreeCAD-Native/actions/artifacts/8460240379/zip"
-          EXPECTED="7fdb7e01792349427c3df07e7bd23d7bffb8b5631c093506ca18e88fb6881d4c"
-          if curl --fail --location --retry 2 --retry-delay 2 "$RELEASE_URL" --output "$TARGET"; then
-            SOURCE=release
-          else
-            rm -f "$TARGET"
-            curl --fail --location --retry 3 --retry-delay 3 \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "$ARTIFACT_URL" --output /tmp/cadcore.zip
-            unzip -q /tmp/cadcore.zip -d /tmp/cadcore
-            cp /tmp/cadcore/freecad-android-cadcore-step-v1.aar "$TARGET"
-            SOURCE=validated-actions-artifact-8460240379
-          fi
+          EXPECTED="0918d7352a44b6aabd09f1d268e514268528dfafc06919110d5a63a97de60442"
+          curl --fail --location --retry 4 --retry-delay 3 \
+            "$RELEASE_URL" --output "$TARGET"
           ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
           test "$ACTUAL" = "$EXPECTED"
-          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=%s\nCADCORE_SHA256=%s\n' \
-            "$SOURCE" "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
+          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v1\nCADCORE_SHA256=%s\n' \
+            "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
