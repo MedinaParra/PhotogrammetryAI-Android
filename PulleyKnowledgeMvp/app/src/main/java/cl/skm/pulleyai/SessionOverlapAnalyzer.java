@@ -9,13 +9,21 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
-/** Promotes calibrated two-view results into tracks, global poses, a fused cloud and a metric shell. */
+/** Bounded reconstruction orchestrator: selection, budget, geometry, tracks, global cloud and metric shell. */
 public final class SessionOverlapAnalyzer {
+    private static final int ANALYSIS_WIDTH = 640;
+    private static final int ANALYSIS_HEIGHT = 480;
+    private static final int FEATURES_PER_FRAME = 420;
+
     private SessionOverlapAnalyzer() {}
 
     public static Report analyze(CaptureStore store, String sessionId) throws Exception {
@@ -24,9 +32,24 @@ public final class SessionOverlapAnalyzer {
 
     public static Report analyze(Context context, CaptureStore store, String sessionId) throws Exception {
         CaptureStore.Session session = store.getSession(sessionId);
-        Double measuredLengthMm = session == null ? null : session.shellLengthMm;
-        CameraIntrinsicsProvider provider = context == null ? null : new CameraIntrinsicsProvider(context);
-        List<CachedFrame> frames = loadFrames(store, sessionId, provider);
+        if (session == null) throw new IllegalStateException("Sesión inexistente");
+        FramePlan framePlan = planFrames(store.frames(sessionId));
+        int candidatePairs = countCandidatePairs(framePlan.frames);
+        long availableMemory = availableMemoryBytes();
+        long freeStorage = store.sessionDir(sessionId).getUsableSpace();
+        IndustrialAnalysisBudgetCore.Result budget = IndustrialAnalysisBudgetCore.evaluate(
+                framePlan.frames.size(), ANALYSIS_WIDTH, ANALYSIS_HEIGHT,
+                FEATURES_PER_FRAME, candidatePairs, availableMemory, freeStorage);
+        if (!framePlan.selection.ready() || !budget.ready()) {
+            Report blocked = Report.blocked(framePlan.selection, budget,
+                    framePlan.frames.size(), candidatePairs);
+            persist(store, sessionId, blocked, "RESOURCE_BLOCKED", false, 0, 0);
+            return blocked;
+        }
+
+        CameraIntrinsicsProvider provider = context == null
+                ? null : new CameraIntrinsicsProvider(context);
+        List<CachedFrame> frames = decodeFrames(framePlan.frames, provider);
         List<ViewGraphCore.Node> localNodes = new ArrayList<ViewGraphCore.Node>();
         for (CachedFrame frame : frames) {
             localNodes.add(new ViewGraphCore.Node(
@@ -35,8 +58,10 @@ public final class SessionOverlapAnalyzer {
 
         List<Pair> pairs = new ArrayList<Pair>();
         List<ViewGraphCore.Edge> localEdges = new ArrayList<ViewGraphCore.Edge>();
-        List<MultiViewTrackCore.MatchEdge> trackEdges = new ArrayList<MultiViewTrackCore.MatchEdge>();
-        List<GlobalPoseGraphCore.Edge> poseEdges = new ArrayList<GlobalPoseGraphCore.Edge>();
+        List<MultiViewTrackCore.MatchEdge> trackEdges =
+                new ArrayList<MultiViewTrackCore.MatchEdge>();
+        List<GlobalPoseGraphCore.Edge> poseEdges =
+                new ArrayList<GlobalPoseGraphCore.Edge>();
         List<PairPoint> pairPoints = new ArrayList<PairPoint>();
         int missingIntrinsics = 0;
         int strongPairs = 0;
@@ -44,8 +69,8 @@ public final class SessionOverlapAnalyzer {
         int localPointCount = 0;
         for (CachedFrame frame : frames) if (!frame.intrinsics.available) missingIntrinsics++;
 
-        for (int left=0;left<frames.size();left++) {
-            for (int right=left+1;right<frames.size();right++) {
+        for (int left=0; left<frames.size(); left++) {
+            for (int right=left+1; right<frames.size(); right++) {
                 if (!candidate(frames.get(left).source, frames.get(right).source)) continue;
                 PairSolution solution = solvePair(left, right, frames.get(left), frames.get(right));
                 pairs.add(solution.report);
@@ -68,13 +93,12 @@ public final class SessionOverlapAnalyzer {
                 && strongPairs >= Math.max(5, requiredPairs/3)
                 && localPointCount >= requiredPairs*14
                 && localGraph.ready;
-
         MultiViewTrackCore.Result tracks = MultiViewTrackCore.build(trackEdges, 3);
         GlobalPoseGraphCore.Result poseGraph = GlobalPoseGraphCore.solve(frames.size(), poseEdges);
         GlobalSparseCloudCore.Result cloud = fuseCloud(tracks, poseGraph, pairPoints);
         PulleyShellRansacCore.Result shell = fitShell(cloud);
-        PulleyMetricScaleCore.Result metric = PulleyMetricScaleCore.resolve(shell, measuredLengthMm);
-
+        PulleyMetricScaleCore.Result metric =
+                PulleyMetricScaleCore.resolve(shell, session.shellLengthMm);
         boolean globalReady = localReady && tracks.ready() && poseGraph.ready() && cloud.ready();
         boolean modelReady = globalReady && shell.ready() && metric.ready();
         String status = modelReady ? "METRIC_SHELL_READY"
@@ -82,21 +106,75 @@ public final class SessionOverlapAnalyzer {
                 : missingIntrinsics > 0 ? "INTRINSICS_MISSING"
                 : localReady ? "GLOBAL_INCOMPLETE" : localGraph.status;
 
-        Report report = new Report(frames.size(), pairs, strongPairs, usablePairs,
-                requiredPairs, missingIntrinsics, localPointCount, localGraph,
-                tracks, poseGraph, cloud, shell, metric, localReady, globalReady, modelReady);
-        File output = new File(store.sessionDir(sessionId), "overlap_report.json");
-        try (FileOutputStream stream = new FileOutputStream(output)) {
-            stream.write(report.toJson().getBytes(StandardCharsets.UTF_8));
-        }
-        store.saveOverlapResult(sessionId, status, globalReady, usablePairs, localGraph.components);
+        Report report = new Report(framePlan.selection, budget, frames.size(),
+                candidatePairs, pairs, strongPairs, usablePairs, requiredPairs,
+                missingIntrinsics, localPointCount, localGraph, tracks, poseGraph,
+                cloud, shell, metric, localReady, globalReady, modelReady, null);
+        persist(store, sessionId, report, status, globalReady,
+                usablePairs, localGraph.components);
         return report;
+    }
+
+    private static FramePlan planFrames(List<CaptureStore.Frame> all) {
+        Map<Integer,CaptureStore.Frame> bySequence =
+                new HashMap<Integer,CaptureStore.Frame>();
+        List<ReconstructionFrameSelectorCore.Candidate> candidates =
+                new ArrayList<ReconstructionFrameSelectorCore.Candidate>();
+        for (CaptureStore.Frame frame : all) {
+            if (!"ACCEPTED".equals(frame.quality) || !new File(frame.filePath).isFile()) continue;
+            bySequence.put(frame.sequence, frame);
+            candidates.add(new ReconstructionFrameSelectorCore.Candidate(
+                    frame.sequence, frame.band, frame.sector, frame.blur,
+                    frame.luma, frame.motion, frame.createdAt, true));
+        }
+        ReconstructionFrameSelectorCore.Result selection =
+                ReconstructionFrameSelectorCore.select(candidates, 2, 48);
+        List<CaptureStore.Frame> selected = new ArrayList<CaptureStore.Frame>();
+        for (ReconstructionFrameSelectorCore.Candidate candidate : selection.selected) {
+            CaptureStore.Frame frame = bySequence.get(candidate.id);
+            if (frame != null) selected.add(frame);
+        }
+        Collections.sort(selected, new Comparator<CaptureStore.Frame>() {
+            @Override public int compare(CaptureStore.Frame a, CaptureStore.Frame b) {
+                return Integer.compare(a.sequence, b.sequence);
+            }
+        });
+        return new FramePlan(selection, selected);
+    }
+
+    private static List<CachedFrame> decodeFrames(List<CaptureStore.Frame> selected,
+                                                   CameraIntrinsicsProvider provider) {
+        List<CachedFrame> result = new ArrayList<CachedFrame>();
+        for (CaptureStore.Frame frame : selected) {
+            Gray gray = decode(frame.filePath);
+            VisualFeatureCore.FeatureSet features = VisualFeatureCore.detect(
+                    gray.pixels, gray.width, gray.height, FEATURES_PER_FRAME);
+            CameraIntrinsicsProvider.Resolution intrinsics = provider == null
+                    ? CameraIntrinsicsProvider.Resolution.failed("CONTEXT_UNAVAILABLE")
+                    : provider.resolve(frame, gray.width, gray.height);
+            result.add(new CachedFrame(frame, features, intrinsics));
+        }
+        return result;
+    }
+
+    private static int countCandidatePairs(List<CaptureStore.Frame> frames) {
+        int count = 0;
+        for (int i=0;i<frames.size();i++) {
+            for (int j=i+1;j<frames.size();j++) if (candidate(frames.get(i), frames.get(j))) count++;
+        }
+        return count;
+    }
+
+    private static long availableMemoryBytes() {
+        Runtime runtime = Runtime.getRuntime();
+        long used = runtime.totalMemory()-runtime.freeMemory();
+        return Math.max(0L, runtime.maxMemory()-used);
     }
 
     private static PairSolution solvePair(int leftFrame, int rightFrame,
                                           CachedFrame left, CachedFrame right) {
-        VisualFeatureCore.PairResult descriptors = VisualFeatureCore.match(
-                left.features, right.features);
+        VisualFeatureCore.PairResult descriptors =
+                VisualFeatureCore.match(left.features, right.features);
         List<FundamentalMatrixCore.PointPair> observations = imagePairs(
                 left.features, right.features, descriptors);
         FundamentalMatrixCore.Result fundamental = FundamentalMatrixCore.estimate(
@@ -104,7 +182,8 @@ public final class SessionOverlapAnalyzer {
         EssentialPoseCore.Result pose = fundamental.solved
                 && left.intrinsics.available && right.intrinsics.available
                 ? EssentialPoseCore.recover(fundamental.matrix, observations,
-                fundamental.inliers, left.intrinsics.intrinsics, right.intrinsics.intrinsics)
+                fundamental.inliers, left.intrinsics.intrinsics,
+                right.intrinsics.intrinsics)
                 : EssentialPoseCore.Result.failed(!fundamental.solved
                 ? "FUNDAMENTAL_FAILED" : "INTRINSICS_UNAVAILABLE");
         boolean poseUsable = pose.solved
@@ -118,12 +197,10 @@ public final class SessionOverlapAnalyzer {
         String status = "STRONG".equals(cloud.status) ? "STRONG"
                 : cloudUsable ? "USABLE" : "WEAK";
         Pair report = new Pair(left.source.sequence, right.source.sequence,
-                descriptors.matches.size(),
-                fundamental.solved ? fundamental.inliers.size() : 0,
+                descriptors.matches.size(), fundamental.solved ? fundamental.inliers.size() : 0,
                 fundamental.solved ? fundamental.rmsPx : Double.POSITIVE_INFINITY,
                 pose.status, pose.rotationDegrees, pose.medianParallaxDegrees,
                 cloud.status, cloud.points.size(), cloud.rmsReprojectionPx, status);
-
         List<MultiViewTrackCore.MatchEdge> trackEdges =
                 new ArrayList<MultiViewTrackCore.MatchEdge>();
         List<PairPoint> points = new ArrayList<PairPoint>();
@@ -132,7 +209,7 @@ public final class SessionOverlapAnalyzer {
             if (matchIndex < 0 || matchIndex >= descriptors.matches.size()) continue;
             VisualFeatureCore.Match match = descriptors.matches.get(matchIndex);
             double confidence = Math.max(0.05, fundamental.inlierRatio
-                    / (1.0 + point.reprojectionErrorPx*point.reprojectionErrorPx));
+                    /(1.0+point.reprojectionErrorPx*point.reprojectionErrorPx));
             trackEdges.add(new MultiViewTrackCore.MatchEdge(
                     leftFrame, match.leftIndex, rightFrame, match.rightIndex, confidence));
             points.add(new PairPoint(leftFrame, match.leftIndex,
@@ -141,15 +218,14 @@ public final class SessionOverlapAnalyzer {
         GlobalPoseGraphCore.Edge poseEdge = cloudUsable
                 ? new GlobalPoseGraphCore.Edge(leftFrame, rightFrame,
                 pose.rotation, pose.translation, Math.max(0.10,
-                fundamental.inlierRatio * Math.min(1.0, pose.medianParallaxDegrees/2.0)
-                        / (1.0 + cloud.rmsReprojectionPx)))
+                fundamental.inlierRatio*Math.min(1.0, pose.medianParallaxDegrees/2.0)
+                        /(1.0+cloud.rmsReprojectionPx)))
                 : null;
         return new PairSolution(report, trackEdges, points, poseEdge);
     }
 
     private static GlobalSparseCloudCore.Result fuseCloud(
-            MultiViewTrackCore.Result tracks,
-            GlobalPoseGraphCore.Result poses,
+            MultiViewTrackCore.Result tracks, GlobalPoseGraphCore.Result poses,
             List<PairPoint> points) {
         if (!tracks.ready() || !poses.ready()) {
             return GlobalSparseCloudCore.fuse(
@@ -165,7 +241,8 @@ public final class SessionOverlapAnalyzer {
                 new ArrayList<GlobalSparseCloudCore.Sample>();
         for (PairPoint point : points) {
             Integer track = observationTracks.get(key(point.leftFrame, point.leftFeature));
-            if (track == null) track = observationTracks.get(key(point.rightFrame, point.rightFeature));
+            if (track == null) track = observationTracks.get(
+                    key(point.rightFrame, point.rightFeature));
             if (track == null || point.leftFrame >= poses.poses.size()) continue;
             GlobalPoseGraphCore.Pose pose = poses.poses.get(point.leftFrame);
             if (pose == null) continue;
@@ -185,44 +262,38 @@ public final class SessionOverlapAnalyzer {
         return PulleyShellRansacCore.fit(points, 900);
     }
 
+    private static void persist(CaptureStore store, String sessionId, Report report,
+                                String status, boolean ready, int usablePairs,
+                                int components) throws Exception {
+        File output = new File(store.sessionDir(sessionId), "overlap_report.json");
+        try (FileOutputStream stream = new FileOutputStream(output)) {
+            stream.write(report.toJson().getBytes(StandardCharsets.UTF_8));
+        }
+        store.saveOverlapResult(sessionId, status, ready, usablePairs, components);
+    }
+
     private static double[] toWorld(GlobalPoseGraphCore.Pose pose,
                                     SparseTriangulationCore.Point3 point) {
-        double x = point.x-pose.translation[0];
-        double y = point.y-pose.translation[1];
-        double z = point.z-pose.translation[2];
-        double[][] r = pose.rotation;
+        double x=point.x-pose.translation[0];
+        double y=point.y-pose.translation[1];
+        double z=point.z-pose.translation[2];
+        double[][] r=pose.rotation;
         return new double[]{r[0][0]*x+r[1][0]*y+r[2][0]*z,
                 r[0][1]*x+r[1][1]*y+r[2][1]*z,
                 r[0][2]*x+r[1][2]*y+r[2][2]*z};
-    }
-
-    private static List<CachedFrame> loadFrames(CaptureStore store, String sessionId,
-                                                 CameraIntrinsicsProvider provider) {
-        List<CachedFrame> result = new ArrayList<CachedFrame>();
-        for (CaptureStore.Frame frame : store.frames(sessionId)) {
-            if (!"ACCEPTED".equals(frame.quality) || !new File(frame.filePath).isFile()) continue;
-            Gray gray = decode(frame.filePath);
-            VisualFeatureCore.FeatureSet features =
-                    VisualFeatureCore.detect(gray.pixels, gray.width, gray.height, 420);
-            CameraIntrinsicsProvider.Resolution intrinsics = provider == null
-                    ? CameraIntrinsicsProvider.Resolution.failed("CONTEXT_UNAVAILABLE")
-                    : provider.resolve(frame, gray.width, gray.height);
-            result.add(new CachedFrame(frame, features, intrinsics));
-        }
-        return result;
     }
 
     private static Gray decode(String path) {
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(path, bounds);
-        int sample = 1;
-        while (Math.max(bounds.outWidth, bounds.outHeight)/sample > 640) sample*=2;
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inSampleSize = Math.max(1, sample);
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        Bitmap bitmap = BitmapFactory.decodeFile(path, options);
-        if (bitmap == null) throw new IllegalStateException("No se pudo decodificar " + path);
+        int sample=1;
+        while (Math.max(bounds.outWidth,bounds.outHeight)/sample>ANALYSIS_WIDTH) sample*=2;
+        BitmapFactory.Options options=new BitmapFactory.Options();
+        options.inSampleSize=Math.max(1,sample);
+        options.inPreferredConfig=Bitmap.Config.ARGB_8888;
+        Bitmap bitmap=BitmapFactory.decodeFile(path,options);
+        if(bitmap==null)throw new IllegalStateException("No se pudo decodificar "+path);
         try {
             int width=bitmap.getWidth(),height=bitmap.getHeight();
             byte[] gray=new byte[width*height];
@@ -236,14 +307,11 @@ public final class SessionOverlapAnalyzer {
                 }
             }
             return new Gray(width,height,gray);
-        } finally {
-            bitmap.recycle();
-        }
+        } finally { bitmap.recycle(); }
     }
 
     private static List<FundamentalMatrixCore.PointPair> imagePairs(
-            VisualFeatureCore.FeatureSet left,
-            VisualFeatureCore.FeatureSet right,
+            VisualFeatureCore.FeatureSet left, VisualFeatureCore.FeatureSet right,
             VisualFeatureCore.PairResult matches) {
         List<FundamentalMatrixCore.PointPair> result =
                 new ArrayList<FundamentalMatrixCore.PointPair>();
@@ -265,9 +333,17 @@ public final class SessionOverlapAnalyzer {
         return ((long)frame<<32)^(feature&0xffffffffL);
     }
 
+    private static final class FramePlan {
+        final ReconstructionFrameSelectorCore.Result selection;
+        final List<CaptureStore.Frame> frames;
+        FramePlan(ReconstructionFrameSelectorCore.Result selection,
+                  List<CaptureStore.Frame> frames) {
+            this.selection=selection;this.frames=frames;
+        }
+    }
     private static final class Gray {
-        final int width,height; final byte[] pixels;
-        Gray(int width,int height,byte[] pixels){this.width=width;this.height=height;this.pixels=pixels;}
+        final int width,height;final byte[]pixels;
+        Gray(int width,int height,byte[]pixels){this.width=width;this.height=height;this.pixels=pixels;}
     }
     private static final class CachedFrame {
         final CaptureStore.Frame source;
@@ -317,7 +393,9 @@ public final class SessionOverlapAnalyzer {
     }
 
     public static final class Report {
-        public final int acceptedFrames,strongPairs,usablePairs,requiredPairs;
+        public final ReconstructionFrameSelectorCore.Result selection;
+        public final IndustrialAnalysisBudgetCore.Result budget;
+        public final int analyzedFrames,candidatePairs,strongPairs,usablePairs,requiredPairs;
         public final int missingIntrinsicsFrames,totalTriangulatedPoints;
         public final List<Pair> pairs;
         public final ViewGraphCore.Result localGraph;
@@ -327,28 +405,52 @@ public final class SessionOverlapAnalyzer {
         public final PulleyShellRansacCore.Result shell;
         public final PulleyMetricScaleCore.Result metric;
         public final boolean localReady,ready,modelReady;
+        public final String blocker;
 
-        Report(int acceptedFrames,List<Pair> pairs,int strongPairs,int usablePairs,
+        Report(ReconstructionFrameSelectorCore.Result selection,
+               IndustrialAnalysisBudgetCore.Result budget,int analyzedFrames,
+               int candidatePairs,List<Pair> pairs,int strongPairs,int usablePairs,
                int requiredPairs,int missingIntrinsicsFrames,int totalTriangulatedPoints,
                ViewGraphCore.Result localGraph,MultiViewTrackCore.Result tracks,
                GlobalPoseGraphCore.Result globalPoseGraph,
                GlobalSparseCloudCore.Result globalCloud,
                PulleyShellRansacCore.Result shell,PulleyMetricScaleCore.Result metric,
-               boolean localReady,boolean ready,boolean modelReady) {
-            this.acceptedFrames=acceptedFrames;this.pairs=pairs;this.strongPairs=strongPairs;
-            this.usablePairs=usablePairs;this.requiredPairs=requiredPairs;
+               boolean localReady,boolean ready,boolean modelReady,String blocker) {
+            this.selection=selection;this.budget=budget;this.analyzedFrames=analyzedFrames;
+            this.candidatePairs=candidatePairs;this.pairs=Collections.unmodifiableList(new ArrayList<Pair>(pairs));
+            this.strongPairs=strongPairs;this.usablePairs=usablePairs;this.requiredPairs=requiredPairs;
             this.missingIntrinsicsFrames=missingIntrinsicsFrames;
             this.totalTriangulatedPoints=totalTriangulatedPoints;this.localGraph=localGraph;
             this.tracks=tracks;this.globalPoseGraph=globalPoseGraph;this.globalCloud=globalCloud;
             this.shell=shell;this.metric=metric;this.localReady=localReady;
-            this.ready=ready;this.modelReady=modelReady;
+            this.ready=ready;this.modelReady=modelReady;this.blocker=blocker;
+        }
+
+        static Report blocked(ReconstructionFrameSelectorCore.Result selection,
+                              IndustrialAnalysisBudgetCore.Result budget,
+                              int frames,int pairs) {
+            ViewGraphCore.Result graph=ViewGraphCore.analyze(
+                    new ArrayList<ViewGraphCore.Node>(),new ArrayList<ViewGraphCore.Edge>());
+            MultiViewTrackCore.Result tracks=MultiViewTrackCore.build(
+                    new ArrayList<MultiViewTrackCore.MatchEdge>(),3);
+            GlobalPoseGraphCore.Result poses=GlobalPoseGraphCore.solve(0,
+                    new ArrayList<GlobalPoseGraphCore.Edge>());
+            GlobalSparseCloudCore.Result cloud=GlobalSparseCloudCore.fuse(
+                    new ArrayList<GlobalSparseCloudCore.Sample>(),2);
+            PulleyShellRansacCore.Result shell=PulleyShellRansacCore.fit(
+                    new ArrayList<PulleyShellRansacCore.Point>(),100);
+            PulleyMetricScaleCore.Result metric=PulleyMetricScaleCore.resolve(shell,null);
+            String reason=!selection.ready()?selection.summary():budget.summary();
+            return new Report(selection,budget,frames,pairs,new ArrayList<Pair>(),0,0,0,
+                    0,0,graph,tracks,poses,cloud,shell,metric,false,false,false,reason);
         }
 
         public String summary() {
-            return "Aristas "+usablePairs+"/"+requiredPairs+" · puntos locales "
-                    +totalTriangulatedPoints+"\n"+tracks.summary()+"\n"
-                    +globalPoseGraph.summary()+"\n"+globalCloud.summary()+"\n"
-                    +shell.summary()+"\n"+metric.summary()
+            if(blocker!=null)return "Análisis bloqueado\n"+blocker+"\n"+budget.summary();
+            return selection.summary()+" · pares "+candidatePairs+"\n"+budget.summary()
+                    +"\nAristas "+usablePairs+"/"+requiredPairs+" · puntos "+totalTriangulatedPoints
+                    +"\n"+tracks.summary()+"\n"+globalPoseGraph.summary()
+                    +"\n"+globalCloud.summary()+"\n"+shell.summary()+"\n"+metric.summary()
                     +(modelReady?"\nMANTO MÉTRICO APROBADO"
                     :ready?"\nNUBE GLOBAL APROBADA; FALTA MODELO MÉTRICO"
                     :"\nRECONSTRUCCIÓN GLOBAL INCOMPLETA");
@@ -356,57 +458,36 @@ public final class SessionOverlapAnalyzer {
 
         String toJson() {
             StringBuilder json=new StringBuilder(4096+pairs.size()*220);
-            json.append("{\n\"schema\":\"skm-polea-metric-shell/1\",")
-                    .append("\n\"acceptedFrames\":").append(acceptedFrames)
+            json.append("{\n\"schema\":\"skm-polea-bounded-reconstruction/1\"")
+                    .append(",\n\"selectionStatus\":\"").append(selection.status).append("\"")
+                    .append(",\n\"selectedFrames\":").append(analyzedFrames)
+                    .append(",\n\"discardedFrames\":").append(selection.discarded)
+                    .append(",\n\"budgetTier\":\"").append(budget.tier).append("\"")
+                    .append(",\n\"estimatedBytes\":").append(budget.estimatedBytes)
+                    .append(",\n\"candidatePairs\":").append(candidatePairs)
+                    .append(",\n\"blocker\":").append(blocker==null?"null":"\""+escape(blocker)+"\"")
                     .append(",\n\"strongPairs\":").append(strongPairs)
                     .append(",\n\"usablePairs\":").append(usablePairs)
-                    .append(",\n\"requiredPairs\":").append(requiredPairs)
                     .append(",\n\"localPoints\":").append(totalTriangulatedPoints)
-                    .append(",\n\"missingIntrinsics\":").append(missingIntrinsicsFrames)
-                    .append(",\n\"localGraph\":\"").append(localGraph.status).append("\"")
                     .append(",\n\"tracks\":{\"status\":\"").append(tracks.status)
-                    .append("\",\"count\":").append(tracks.tracks.size())
-                    .append(",\"fourPlus\":").append(tracks.tracksFourPlus).append("}")
+                    .append("\",\"count\":").append(tracks.tracks.size()).append("}")
                     .append(",\n\"poseGraph\":{\"status\":\"").append(globalPoseGraph.status)
-                    .append("\",\"reached\":").append(globalPoseGraph.reachedNodes)
-                    .append(",\"cycles\":").append(globalPoseGraph.trustedCycleEdges).append("}")
+                    .append("\",\"reached\":").append(globalPoseGraph.reachedNodes).append("}")
                     .append(",\n\"cloud\":{\"status\":\"").append(globalCloud.status)
-                    .append("\",\"points\":").append(globalCloud.points.size())
-                    .append(",\"support\":").append(number(globalCloud.averageSupport))
-                    .append(",\"reprojectionRmsPx\":").append(number(globalCloud.rmsReprojectionPx)).append("}")
+                    .append("\",\"points\":").append(globalCloud.points.size()).append("}")
                     .append(",\n\"shell\":{\"status\":\"").append(shell.status)
                     .append("\",\"diameterUnits\":").append(number(shell.radius*2.0))
-                    .append(",\"lengthUnits\":").append(number(shell.length))
-                    .append(",\"inliers\":").append(shell.inlierIndices.size()).append("}")
+                    .append(",\"lengthUnits\":").append(number(shell.length)).append("}")
                     .append(",\n\"metric\":{\"status\":\"").append(metric.status)
-                    .append("\",\"millimetresPerUnit\":").append(number(metric.millimetresPerUnit))
-                    .append(",\"shellDiameterMm\":").append(number(metric.shellDiameterMm))
-                    .append(",\"diameterUncertaintyMm\":").append(number(metric.diameterUncertaintyMm))
+                    .append("\",\"diameterMm\":").append(number(metric.shellDiameterMm))
+                    .append(",\"uncertaintyMm\":").append(number(metric.diameterUncertaintyMm))
                     .append(",\"confidence\":").append(number(metric.confidence)).append("}")
                     .append(",\n\"ready\":").append(ready)
                     .append(",\n\"modelReady\":").append(modelReady)
-                    .append(",\n\"pairs\":[\n");
-            for(int i=0;i<pairs.size();i++) {
-                Pair p=pairs.get(i);
-                json.append(String.format(Locale.ROOT,
-                        "{\"left\":%d,\"right\":%d,\"matches\":%d,\"inliers\":%d,"
-                                +"\"epipolarRmsPx\":%.4f,\"pose\":\"%s\","
-                                +"\"rotationDeg\":%.4f,\"parallaxDeg\":%.4f,"
-                                +"\"cloud\":\"%s\",\"points\":%d,"
-                                +"\"reprojectionRmsPx\":%.4f,\"status\":\"%s\"}",
-                        p.leftSequence,p.rightSequence,p.rawMatches,p.inliers,
-                        p.epipolarRmsPx,p.poseStatus,p.rotationDegrees,p.parallaxDegrees,
-                        p.cloudStatus,p.triangulatedPoints,p.reprojectionRmsPx,p.status));
-                if(i+1<pairs.size())json.append(',');
-                json.append('\n');
-            }
-            json.append("]\n}");
+                    .append("\n}");
             return json.toString();
         }
-
-        private static String number(double value) {
-            return Double.isFinite(value)
-                    ? String.format(Locale.ROOT,"%.8f",value) : "null";
-        }
+        private static String number(double value){return Double.isFinite(value)?String.format(Locale.ROOT,"%.8f",value):"null";}
+        private static String escape(String value){return value.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n");}
     }
 }
