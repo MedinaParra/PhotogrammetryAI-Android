@@ -79,7 +79,18 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Build STEP-enabled debug APK
-        run: gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 \
+            | tee artifacts/gradle-build.log
+      - name: Upload Gradle diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SKM-Polea-AI-alpha17-build-diagnostic
+          path: artifacts/gradle-build.log
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify native STEP runtime packaging
         run: |
           set -euo pipefail
