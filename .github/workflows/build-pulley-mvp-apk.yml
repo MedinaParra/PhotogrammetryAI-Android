@@ -67,7 +67,7 @@ jobs:
           mkdir -p PulleyKnowledgeMvp/app/libs artifacts
           TARGET=PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v1.aar
           RELEASE_URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v1/freecad-android-cadcore-step-v1.aar"
-          EXPECTED="0918d7352a44b6aabd09f1d268e514268528dfafc06919110d5a63a97de60442"
+          EXPECTED="c8de1869b1a777a89f3d924130c4567bfe16ba218504ca3d83a3467bbd3bd795"
           curl --fail --location --retry 4 --retry-delay 3 \
             "$RELEASE_URL" --output "$TARGET"
           ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
