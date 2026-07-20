@@ -56,7 +56,7 @@ public final class TrackPointRefinementCore {
                 damping = Math.min(1e6,damping*8.0);
             }
         }
-        List<Double> errors = new ArrayList<Double>();
+        List<Double> allErrors = new ArrayList<Double>();
         int positive = 0;
         for (Observation observation : observations) {
             Projection projection = project(point, observation.camera);
@@ -64,18 +64,24 @@ public final class TrackPointRefinementCore {
             if (projection.depth > 1e-7) positive++;
             double du = projection.u-observation.u;
             double dv = projection.v-observation.v;
-            errors.add(Math.sqrt(du*du+dv*dv));
+            allErrors.add(Math.sqrt(du*du+dv*dv));
         }
-        double rms = rms(errors);
-        double median = percentile(errors,0.5);
-        double p90 = percentile(errors,0.9);
+        double rawMedian = percentile(allErrors,0.5);
+        double threshold = Math.max(Math.max(1.0,huberPx)*2.5, rawMedian*3.5+0.5);
+        List<Double> inlierErrors = new ArrayList<Double>();
+        for (double error : allErrors) if (error <= threshold) inlierErrors.add(error);
+        int outliers = Math.max(0,allErrors.size()-inlierErrors.size());
+        double rms = rms(inlierErrors);
+        double median = percentile(inlierErrors,0.5);
+        double p90 = percentile(inlierErrors,0.9);
         double positiveRatio = (double)positive/observations.size();
-        String status = observations.size()>=5 && positiveRatio>=0.95
+        double inlierRatio = (double)inlierErrors.size()/observations.size();
+        String status = inlierErrors.size()>=5 && inlierRatio>=0.75 && positiveRatio>=0.95
                 && rms<=1.2 && p90<=2.0 ? "STRONG"
-                : observations.size()>=3 && positiveRatio>=0.80
+                : inlierErrors.size()>=3 && inlierRatio>=0.60 && positiveRatio>=0.80
                 && rms<=2.5 && p90<=4.0 ? "USABLE" : "WEAK";
-        return new Result(true,status,point,observations.size(),positiveRatio,
-                rms,median,p90,usedIterations,previousCost);
+        return new Result(true,status,point,observations.size(),inlierErrors.size(),outliers,
+                positiveRatio,inlierRatio,rms,median,p90,usedIterations,previousCost);
     }
 
     private static Projection project(double[] point, Camera camera) {
@@ -103,8 +109,8 @@ public final class TrackPointRefinementCore {
             Projection projection=project(point,observation.camera);
             if(projection==null || projection.depth<=1e-7)continue;
             double du=projection.u-observation.u,dv=projection.v-observation.v;
-            double e=Math.sqrt(du*du+dv*dv);
-            total+=huberLoss(e,huber);count++;
+            double error=Math.sqrt(du*du+dv*dv);
+            total+=huberLoss(error,huber);count++;
         }
         return count<3?Double.POSITIVE_INFINITY:total/count;
     }
@@ -117,12 +123,12 @@ public final class TrackPointRefinementCore {
         }
     }
     private static double huberWeight(double error,double threshold) {
-        double t=Math.max(0.5,threshold);
-        return error<=t?1.0:t/Math.max(error,1e-12);
+        double value=Math.max(0.5,threshold);
+        return error<=value?1.0:value/Math.max(error,1e-12);
     }
     private static double huberLoss(double error,double threshold) {
-        double t=Math.max(0.5,threshold);
-        return error<=t?0.5*error*error:t*(error-0.5*t);
+        double value=Math.max(0.5,threshold);
+        return error<=value?0.5*error*error:value*(error-0.5*value);
     }
     private static double[] solve3(double[][] a,double[] b) {
         double[][] m=new double[3][4];
@@ -165,21 +171,27 @@ public final class TrackPointRefinementCore {
         public final String status;
         public final double[] point;
         public final int observations;
+        public final int inliers;
+        public final int outliers;
         public final double positiveDepthRatio;
+        public final double inlierRatio;
         public final double rmsPx,medianPx,p90Px;
         public final int iterations;
         public final double robustCost;
-        Result(boolean solved,String status,double[] point,int observations,double positiveDepthRatio,
-               double rmsPx,double medianPx,double p90Px,int iterations,double robustCost) {
+        Result(boolean solved,String status,double[] point,int observations,int inliers,int outliers,
+               double positiveDepthRatio,double inlierRatio,double rmsPx,double medianPx,double p90Px,
+               int iterations,double robustCost) {
             this.solved=solved;this.status=status;this.point=point==null?null:point.clone();
-            this.observations=observations;this.positiveDepthRatio=positiveDepthRatio;
+            this.observations=observations;this.inliers=inliers;this.outliers=outliers;
+            this.positiveDepthRatio=positiveDepthRatio;this.inlierRatio=inlierRatio;
             this.rmsPx=rmsPx;this.medianPx=medianPx;this.p90Px=p90Px;
             this.iterations=iterations;this.robustCost=robustCost;
         }
-        static Result failed(String status){return new Result(false,status,null,0,0,
+        static Result failed(String status){return new Result(false,status,null,0,0,0,0,0,
                 Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,0,Double.POSITIVE_INFINITY);}
         public boolean ready(){return "STRONG".equals(status)||"USABLE".equals(status);}
-        public String summary(){return "Obs "+observations+" · RMS "+format(rmsPx)+" px · P90 "+format(p90Px)+" px · "+status;}
+        public String summary(){return "Obs "+observations+" · inliers "+inliers+" · outliers "+outliers
+                +" · RMS "+format(rmsPx)+" px · P90 "+format(p90Px)+" px · "+status;}
         private static String format(double value){return String.format(java.util.Locale.ROOT,"%.3f",value);}
     }
     private static final class Projection {
