@@ -10,27 +10,19 @@ android {
         applicationId 'cl.skm.pulleyai'
         minSdk 24
         targetSdk 35
-        versionCode 15
-        versionName '0.14.0-alpha15'
-        externalNativeBuild {
-            cmake {
-                cppFlags '-std=c++17'
-            }
-        }
-        ndk {
-            abiFilters 'arm64-v8a'
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path file('src/main/cpp/CMakeLists.txt')
-            version '3.22.1'
-        }
+        versionCode 16
+        versionName '0.15.0-alpha16'
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    def cadcoreAar = file('libs/freecad-android-cadcore-step-v1.aar')
+    if (cadcoreAar.exists()) {
+        implementation files(cadcoreAar)
     }
 }
