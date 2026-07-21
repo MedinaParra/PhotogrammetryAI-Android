@@ -3,8 +3,8 @@ package cl.skm.pulleyai;
 import android.content.Context;
 
 /**
- * Runtime service that joins report qualification, bounded BA and append-only audit.
- * A missing BA problem produces a reviewable unoptimized fallback, never a false success.
+ * Runtime service joining report qualification, bounded BA, conservative rotational refinement
+ * and append-only audit. Missing or rejected rotation refinement preserves the stable base BA.
  */
 public final class RuntimeReconstructionCoordinator {
     private RuntimeReconstructionCoordinator() {}
@@ -23,9 +23,11 @@ public final class RuntimeReconstructionCoordinator {
                         : supplemental);
 
         LocalBundleAdjustmentCore.Result ba = null;
+        RotationalBundleAdjustmentCore.Result rotational = null;
         if (gate.canReconstructAutomatically() && resourceBudgetReady && !interrupted
                 && problem != null) {
-            ba = LocalBundleAdjustmentCore.optimize(problem, gate, 10, 2.0, 0.02);
+            rotational = RotationalBundleAdjustmentCore.optimize(problem, gate);
+            ba = rotational.bundleAdjustment;
         }
         RuntimeReconstructionDecisionCore.Result decision =
                 RuntimeReconstructionDecisionCore.decide(gate, ba, problem != null,
@@ -38,26 +40,32 @@ public final class RuntimeReconstructionCoordinator {
         } finally {
             store.close();
         }
-        return new Outcome(gate, ba, decision, auditId);
+        return new Outcome(gate, ba, rotational, decision, auditId);
     }
 
     public static final class Outcome {
         public final PhotogrammetrySafetyGateCore.Result gate;
         public final LocalBundleAdjustmentCore.Result bundleAdjustment;
+        public final RotationalBundleAdjustmentCore.Result rotationalBundleAdjustment;
         public final RuntimeReconstructionDecisionCore.Result decision;
         public final long auditId;
 
         Outcome(PhotogrammetrySafetyGateCore.Result gate,
                 LocalBundleAdjustmentCore.Result bundleAdjustment,
+                RotationalBundleAdjustmentCore.Result rotationalBundleAdjustment,
                 RuntimeReconstructionDecisionCore.Result decision, long auditId) {
             this.gate = gate;
             this.bundleAdjustment = bundleAdjustment;
+            this.rotationalBundleAdjustment = rotationalBundleAdjustment;
             this.decision = decision;
             this.auditId = auditId;
         }
 
         public String summary() {
-            return gate.summary() + "\n" + decision.summary() + "\nAuditoría #" + auditId;
+            return gate.summary() + "\n" + decision.summary()
+                    + (rotationalBundleAdjustment == null ? ""
+                    : "\n" + rotationalBundleAdjustment.summary())
+                    + "\nAuditoría #" + auditId;
         }
     }
 }
