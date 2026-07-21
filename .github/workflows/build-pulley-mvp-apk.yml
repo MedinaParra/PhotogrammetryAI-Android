@@ -8,11 +8,17 @@ on:
       - product/single-device-photogrammetry-v1
       - agent/photogrammetry-validation-alpha20
     paths:
-      - 'PulleyKnowledgeMvp/**'
+      - 'PulleyKnowledgeMvp/app/**'
+      - 'PulleyKnowledgeMvp/tools/**'
+      - 'PulleyKnowledgeMvp/*.gradle'
+      - 'PulleyKnowledgeMvp/gradle.properties'
       - '.github/workflows/build-pulley-mvp-apk.yml'
   pull_request:
     paths:
-      - 'PulleyKnowledgeMvp/**'
+      - 'PulleyKnowledgeMvp/app/**'
+      - 'PulleyKnowledgeMvp/tools/**'
+      - 'PulleyKnowledgeMvp/*.gradle'
+      - 'PulleyKnowledgeMvp/gradle.properties'
       - '.github/workflows/build-pulley-mvp-apk.yml'
 
 permissions:
