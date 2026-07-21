@@ -87,7 +87,10 @@ def main() -> int:
         require_sections(path, text, HISTORY_REQUIRED, errors)
         if "NO EJECUTADA" not in text and "PASS" not in text and "APROB" not in text:
             errors.append(f"{path.name} does not state validation outcomes")
-        if re.search(r"Siguiente iteración obligatoria\s*$", text, re.MULTILINE):
+        next_history_section = text.split("## Siguiente iteración obligatoria", 1)
+        if len(next_history_section) != 2 or not re.search(
+            r"###\s+ITER-\d{3}\s+—\s+\S.+", next_history_section[1]
+        ):
             errors.append(f"{path.name} declares no concrete next iteration")
 
     if len(iteration_numbers) != len(set(iteration_numbers)):
@@ -100,7 +103,10 @@ def main() -> int:
         if latest not in current_text:
             errors.append(f"CURRENT.md does not reference latest history record: {latest}")
 
-    next_iteration = re.search(r"###\s+(ITER-\d{3})\s+—\s+(.+)", current_text)
+    current_next_section = current_text.split("## Siguiente iteración obligatoria", 1)
+    next_iteration = None
+    if len(current_next_section) == 2:
+        next_iteration = re.search(r"###\s+(ITER-\d{3})\s+—\s+(.+)", current_next_section[1])
     if not next_iteration:
         errors.append("CURRENT.md must name the next iteration as 'ITER-NNN — title'")
     elif next_iteration.group(1) in {f"ITER-{number:03d}" for number in iteration_numbers}:
