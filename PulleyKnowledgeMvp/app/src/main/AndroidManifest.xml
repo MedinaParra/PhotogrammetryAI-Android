@@ -20,6 +20,14 @@
             android:exported="false"
             android:screenOrientation="landscape" />
         <activity
+            android:name=".RuntimeReviewActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <activity
+            android:name=".DeviceCampaignActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <activity
             android:name=".CadAssemblyActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
