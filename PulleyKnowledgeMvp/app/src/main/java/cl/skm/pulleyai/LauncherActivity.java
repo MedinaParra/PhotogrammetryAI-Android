@@ -20,6 +20,7 @@ import java.util.Locale;
 /** Single product entry point for capture, reconstruction, CAD assembly and native STEP. */
 public final class LauncherActivity extends Activity {
     private CaptureStore captureStore;
+    private RevisionedKnowledgeOpenHelper revisionedKnowledge;
     private TextView stateView;
     private LinearLayout recentContainer;
 
@@ -29,11 +30,17 @@ public final class LauncherActivity extends Activity {
         MainActivity.DbHelper knowledge = new MainActivity.DbHelper(this);
         KnowledgeArchivePatch.apply(knowledge);
         knowledge.close();
+        revisionedKnowledge = new RevisionedKnowledgeOpenHelper(this);
+        revisionedKnowledge.ensureSeeded();
         buildUi();
     }
 
     @Override protected void onResume() { super.onResume(); refresh(); }
-    @Override protected void onDestroy() { captureStore.close(); super.onDestroy(); }
+    @Override protected void onDestroy() {
+        captureStore.close();
+        if (revisionedKnowledge != null) revisionedKnowledge.close();
+        super.onDestroy();
+    }
 
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
@@ -159,7 +166,7 @@ public final class LauncherActivity extends Activity {
         CaptureStore.Session open = captureStore.latestOpen();
         CadCoreStepImporter.Status core = CadCoreStepImporter.status(this);
         stateView.setText((open == null
-                ? "Bases locales listas · no hay captura abierta"
+                ? "Bases locales listas · evidencia revisionada " + RevisionedKnowledgeOpenHelper.schemaFingerprint()
                 : "Captura abierta: " + open.label + " · " + open.accepted + " fotos aceptadas")
                 + "\nCAD: " + core.runtime
                 + (core.stepReady ? " · STEP NATIVO LISTO" : " · STEP pendiente")
