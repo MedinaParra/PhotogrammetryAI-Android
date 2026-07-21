@@ -24,7 +24,7 @@ public final class AndroidDeviceDiagnosticsCollector {
         Context app = context.getApplicationContext();
         double batteryTemperatureC = batteryTemperature(app);
         int thermalStatus = thermalStatus(app);
-        int pssMb = Math.max(0, Debug.getPss() / 1024);
+        int pssMb = (int) Math.min(Integer.MAX_VALUE, Math.max(0L, Debug.getPss() / 1024L));
         Runtime runtime = Runtime.getRuntime();
         int heapMb = toMb(Math.max(0L, runtime.totalMemory() - runtime.freeMemory()));
         int availableMemoryMb = availableMemoryMb(app);
