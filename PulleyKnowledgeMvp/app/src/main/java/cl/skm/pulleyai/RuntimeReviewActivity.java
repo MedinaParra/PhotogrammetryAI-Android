@@ -11,10 +11,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.nio.charset.StandardCharsets;
+import java.util.List;
 
-/** Runs real safety metrics and bounded BA with shared preparation, timeout and safe cancellation. */
+/** Runs real safety metrics and bounded BA with deep cancellation and atomic evidence generations. */
 public final class RuntimeReviewActivity extends Activity {
     public static final String EXTRA_SESSION_ID = "runtime_session_id";
     private static final long RUNTIME_BUDGET_MS = 180_000L;
@@ -51,7 +50,7 @@ public final class RuntimeReviewActivity extends Activity {
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
         TextView subtitle = text(
-                "Frames, features e intrínsecos se preparan una vez. El proceso tiene 180 s de presupuesto; cancelar o excederlo conserva fallback sin optimizar.",
+                "El análisis tiene 180 s de presupuesto y checkpoints dentro de detección/matching. La evidencia solo se publica al completar una generación atómica; cancelar conserva fallback sin optimizar.",
                 14, false);
         subtitle.setPadding(0, dp(5), 0, dp(15));
         root.addView(subtitle);
@@ -62,7 +61,7 @@ public final class RuntimeReviewActivity extends Activity {
         root.addView(status);
 
         runButton = new Button(this);
-        runButton.setText("EJECUTAR VALIDACIÓN ACOTADA");
+        runButton.setText("EJECUTAR VALIDACIÓN TRANSACCIONAL");
         runButton.setAllCaps(false);
         runButton.setOnClickListener(view -> runValidation());
         root.addView(runButton);
@@ -87,7 +86,7 @@ public final class RuntimeReviewActivity extends Activity {
         if (control == null) return;
         control.cancel("USER_CANCELLED");
         cancelButton.setEnabled(false);
-        status.setText("Cancelación solicitada. Se detendrá en el siguiente checkpoint y se conservará geometría sin optimizar.");
+        status.setText("Cancelación solicitada. El siguiente checkpoint descartará la generación parcial y publicará evidencia ABORTED sin geometría optimizada.");
         status.setTextColor(Color.rgb(145, 82, 0));
     }
 
@@ -102,7 +101,7 @@ public final class RuntimeReviewActivity extends Activity {
         activeControl = control;
         runButton.setEnabled(false);
         cancelButton.setEnabled(true);
-        status.setText("Preparando análisis acotado y diagnóstico automático…");
+        status.setText("Creando generación transaccional y ejecutando análisis acotado…");
 
         final long startedAtEpochMs = System.currentTimeMillis();
         final long startedElapsedMs = SystemClock.elapsedRealtime();
@@ -125,39 +124,41 @@ public final class RuntimeReviewActivity extends Activity {
         RuntimeSupplementalMetricsCore.Result supplemental = null;
         RuntimeBundleWindowCore.Result window = RuntimeBundleWindowCore.Result.failed("NOT_BUILT");
         RuntimeFramePreparationCache.Result cache = null;
+        RuntimeEvidenceTransactionCore transaction = null;
         File sessionDir = store.sessionDir(sessionId);
+        String runId = "runtime-" + startedAtEpochMs;
+        RuntimeCancellationBridge.install(control);
         try {
+            transaction = new RuntimeEvidenceTransactionCore(sessionDir, runId);
             control.checkpoint("SESSION_ANALYSIS_START");
             report = SessionOverlapAnalyzer.analyze(store, sessionId);
             control.checkpoint("SESSION_ANALYSIS_COMPLETE");
+            transaction.stageText("overlap_report.json", report.toJson());
             peakHeap = Math.max(peakHeap, usedHeapBytes());
             peakPss = Math.max(peakPss, Debug.getPss());
 
             cache = RuntimeFramePreparationCache.prepare(
                     RuntimeReviewActivity.this, store, sessionId, report, control);
             if (!cache.ready) throw new IllegalStateException(cache.status);
-            write(new File(sessionDir, "runtime_frame_cache.json"), cache.canonicalJson());
+            transaction.stageText("runtime_frame_cache.json", cache.canonicalJson());
             peakHeap = Math.max(peakHeap, usedHeapBytes());
             peakPss = Math.max(peakPss, Debug.getPss());
 
             supplemental = RuntimeSupplementalMetricsBuilder.build(cache, report, control);
-            RuntimeSupplementalMetricsBuilder.persist(store, sessionId, supplemental);
+            transaction.stageText("runtime_supplemental_metrics.json", supplemental.canonicalJson());
             window = RuntimeBundleWindowBuilder.build(cache, report, control);
-            RuntimeBundleWindowBuilder.persist(store, sessionId, window);
+            transaction.stageText("runtime_ba_window.json", window.canonicalJson());
             peakHeap = Math.max(peakHeap, usedHeapBytes());
             peakPss = Math.max(peakPss, Debug.getPss());
 
             DeviceDiagnosticsCore.Result diagnostics = AndroidDeviceDiagnosticsCollector.collect(this);
-            write(new File(sessionDir, "runtime_device_diagnostics.json"), diagnostics.canonicalJson());
+            transaction.stageText("runtime_device_diagnostics.json", diagnostics.canonicalJson());
             boolean resources = storage >= 300L * 1024L * 1024L
                     && availableBefore >= 256L * 1024L * 1024L;
             control.checkpoint("BEFORE_BUNDLE_ADJUSTMENT");
 
-            PhotogrammetrySupplementalMetricsCore.Result metrics = supplemental.supplemental;
             PhotogrammetrySafetyGateAdapter.SupplementalMetrics gateMetrics =
-                    new PhotogrammetrySafetyGateAdapter.SupplementalMetrics(
-                            metrics.homographyDominanceRatio, metrics.blurryFrameFraction,
-                            metrics.reflectiveFrameFraction, metrics.repetitiveAmbiguityFraction);
+                    supplementalMetrics(supplemental.supplemental);
             RuntimeReconstructionCoordinator.Outcome outcome =
                     RuntimeReconstructionCoordinator.evaluate(
                             this, sessionId, report, gateMetrics,
@@ -170,46 +171,57 @@ public final class RuntimeReviewActivity extends Activity {
             RuntimeTelemetryCore.Result telemetry = telemetry(startedAtEpochMs, startedElapsedMs,
                     heapBefore, heapAfter, peakHeap, pssBefore, pssAfter, peakPss,
                     availableBefore, storage, window, false, outcome);
-            write(new File(sessionDir, "runtime_telemetry.json"), telemetry.canonicalJson());
-            write(new File(sessionDir, "runtime_audit.json"),
+            transaction.stageText("runtime_telemetry.json", telemetry.canonicalJson());
+            transaction.stageText("runtime_audit.json",
                     auditJson(outcome, window, cache, supplemental, diagnostics, telemetry, control));
+
+            control.checkpoint("CAMPAIGN_MANIFEST");
+            List<RuntimeEvidenceTransactionCore.Entry> entries = transaction.snapshotEntries();
+            CampaignEvidenceManifestCore.Result manifest = CampaignEvidenceManifestBuilder.build(
+                    this, store, sessionId, entries);
+            transaction.stageText("campaign_evidence_manifest.json", manifest.canonicalJson);
+            control.checkpoint("GENERATION_COMMIT");
+            RuntimeEvidenceTransactionCore.Result publication =
+                    transaction.commit(outcome.decision.state.name());
+            transaction = null;
 
             final String summary = outcome.summary() + "\n\n" + cache.summary()
                     + "\n" + supplemental.summary() + "\n" + window.summary()
                     + "\n" + diagnostics.summary() + "\n" + telemetry.summary()
-                    + "\n\nEvidencia runtime guardada en la sesión.";
-            runOnUiThread(() -> showCompleted(summary, outcome.decision.canPublishOptimizedGeometry(),
+                    + "\n" + manifest.summary() + "\n" + publication.summary()
+                    + "\n\nSolo esta generación comprometida queda vigente para exportación.";
+            runOnUiThread(() -> showCompleted(summary,
+                    outcome.decision.canPublishOptimizedGeometry(),
                     outcome.decision.useUnoptimizedFallback));
         } catch (RuntimeExecutionControlCore.AbortedException aborted) {
-            handleAbort(aborted, control, report, supplemental, window, cache,
+            if (transaction != null) transaction.rollback();
+            handleAbort(aborted, report, supplemental, window,
                     startedAtEpochMs, startedElapsedMs, heapBefore, pssBefore,
                     peakHeap, peakPss, availableBefore, storage, sessionDir);
         } catch (Exception error) {
-            final String message = error.getMessage() == null
-                    ? error.getClass().getSimpleName() : error.getMessage();
-            runOnUiThread(() -> showFailure("BLOCKED · " + message));
+            if (transaction != null) transaction.rollback();
+            handleFailure(error, startedAtEpochMs, startedElapsedMs,
+                    heapBefore, pssBefore, peakHeap, peakPss,
+                    availableBefore, storage, sessionDir);
         } finally {
+            RuntimeCancellationBridge.clear();
             activeControl = null;
         }
     }
 
     private void handleAbort(RuntimeExecutionControlCore.AbortedException aborted,
-                             RuntimeExecutionControlCore.Token control,
                              SessionOverlapAnalyzer.Report report,
                              RuntimeSupplementalMetricsCore.Result supplemental,
                              RuntimeBundleWindowCore.Result window,
-                             RuntimeFramePreparationCache.Result cache,
                              long startedAtEpochMs, long startedElapsedMs,
                              long heapBefore, long pssBefore, long peakHeap, long peakPss,
                              long availableBefore, long storage, File sessionDir) {
+        String publicationSummary = "Generación de aborto no persistida";
         try {
+            RuntimeEvidenceTransactionCore abort = new RuntimeEvidenceTransactionCore(
+                    sessionDir, "runtime-" + startedAtEpochMs + "-aborted");
             DeviceDiagnosticsCore.Result diagnostics = AndroidDeviceDiagnosticsCollector.collect(this);
-            write(new File(sessionDir, "runtime_device_diagnostics.json"), diagnostics.canonicalJson());
-            write(new File(sessionDir, "runtime_abort.json"),
-                    "{\"schema\":\"skm-runtime-abort/1\",\"state\":\"" + aborted.state
-                            + "\",\"reason\":\"" + escape(aborted.reason)
-                            + "\",\"stage\":\"" + escape(aborted.stage)
-                            + "\",\"fallbackUnoptimized\":true,\"optimizedGeometryAccepted\":false}");
+            abort.stageText("runtime_device_diagnostics.json", diagnostics.canonicalJson());
             RuntimeReconstructionCoordinator.Outcome fallback = null;
             if (report != null) {
                 PhotogrammetrySafetyGateAdapter.SupplementalMetrics metrics =
@@ -224,13 +236,61 @@ public final class RuntimeReviewActivity extends Activity {
                     heapBefore, heapAfter, Math.max(peakHeap, heapAfter),
                     pssBefore, pssAfter, Math.max(peakPss, pssAfter), availableBefore,
                     storage, window, true, fallback);
-            write(new File(sessionDir, "runtime_telemetry.json"), telemetry.canonicalJson());
+            abort.stageText("runtime_telemetry.json", telemetry.canonicalJson());
+            abort.stageText("runtime_abort.json", abortJson(aborted));
+            List<RuntimeEvidenceTransactionCore.Entry> entries = abort.snapshotEntries();
+            CampaignEvidenceManifestCore.Result manifest = CampaignEvidenceManifestBuilder.build(
+                    this, store, sessionId, entries);
+            abort.stageText("campaign_evidence_manifest.json", manifest.canonicalJson);
+            RuntimeEvidenceTransactionCore.Result publication = abort.commit("ABORTED");
+            publicationSummary = publication.summary() + " · " + manifest.summary();
         } catch (Exception ignored) {
-            // The UI still reports fail-closed even if secondary evidence persistence fails.
+            // UI remains fail-closed even when secondary persistence cannot complete.
         }
         final String message = "REVIEW · " + aborted.reason + " @ " + aborted.stage
-                + "\nFALLBACK SIN OPTIMIZAR · no se acepta geometría BA.";
+                + "\nFALLBACK SIN OPTIMIZAR · no se acepta geometría BA."
+                + "\n" + publicationSummary;
         runOnUiThread(() -> showCompleted(message, false, true));
+    }
+
+    private void handleFailure(Exception error,
+                               long startedAtEpochMs, long startedElapsedMs,
+                               long heapBefore, long pssBefore, long peakHeap, long peakPss,
+                               long availableBefore, long storage, File sessionDir) {
+        String message = error.getMessage() == null
+                ? error.getClass().getSimpleName() : error.getMessage();
+        try {
+            RuntimeEvidenceTransactionCore failed = new RuntimeEvidenceTransactionCore(
+                    sessionDir, "runtime-" + startedAtEpochMs + "-blocked");
+            DeviceDiagnosticsCore.Result diagnostics = AndroidDeviceDiagnosticsCollector.collect(this);
+            failed.stageText("runtime_device_diagnostics.json", diagnostics.canonicalJson());
+            RuntimeTelemetryCore.Result telemetry = telemetry(startedAtEpochMs, startedElapsedMs,
+                    heapBefore, usedHeapBytes(), Math.max(peakHeap, usedHeapBytes()),
+                    pssBefore, Debug.getPss(), Math.max(peakPss, Debug.getPss()),
+                    availableBefore, storage, RuntimeBundleWindowCore.Result.failed("ERROR"),
+                    true, null);
+            failed.stageText("runtime_telemetry.json", telemetry.canonicalJson());
+            failed.stageText("runtime_error.json", "{\"schema\":\"skm-runtime-error/1\","
+                    + "\"message\":\"" + escape(message) + "\","
+                    + "\"optimizedGeometryAccepted\":false}");
+            List<RuntimeEvidenceTransactionCore.Entry> entries = failed.snapshotEntries();
+            CampaignEvidenceManifestCore.Result manifest = CampaignEvidenceManifestBuilder.build(
+                    this, store, sessionId, entries);
+            failed.stageText("campaign_evidence_manifest.json", manifest.canonicalJson);
+            RuntimeEvidenceTransactionCore.Result publication = failed.commit("BLOCKED");
+            message += "\n" + publication.summary();
+        } catch (Exception ignored) {
+            // The primary failure remains visible even when evidence publication fails.
+        }
+        final String finalMessage = "BLOCKED · " + message;
+        runOnUiThread(() -> showFailure(finalMessage));
+    }
+
+    private static String abortJson(RuntimeExecutionControlCore.AbortedException aborted) {
+        return "{\"schema\":\"skm-runtime-abort/2\",\"state\":\"" + aborted.state
+                + "\",\"reason\":\"" + escape(aborted.reason)
+                + "\",\"stage\":\"" + escape(aborted.stage)
+                + "\",\"fallbackUnoptimized\":true,\"optimizedGeometryAccepted\":false}";
     }
 
     private static PhotogrammetrySafetyGateAdapter.SupplementalMetrics supplementalMetrics(
@@ -274,7 +334,7 @@ public final class RuntimeReviewActivity extends Activity {
                                     DeviceDiagnosticsCore.Result diagnostics,
                                     RuntimeTelemetryCore.Result telemetry,
                                     RuntimeExecutionControlCore.Token control) {
-        return "{\n\"schema\":\"skm-runtime-audit/3\""
+        return "{\n\"schema\":\"skm-runtime-audit/4\""
                 + ",\n\"auditId\":" + outcome.auditId
                 + ",\n\"cacheStatus\":\"" + escape(cache.status) + "\""
                 + ",\n\"decodePasses\":" + cache.decodePasses
@@ -291,38 +351,44 @@ public final class RuntimeReviewActivity extends Activity {
     }
 
     private void showCompleted(String message, boolean optimized, boolean fallback) {
-        runButton.setEnabled(true); cancelButton.setEnabled(false);
+        runButton.setEnabled(true);
+        cancelButton.setEnabled(false);
         status.setText(message);
         status.setTextColor(optimized ? Color.rgb(25, 108, 65)
                 : fallback ? Color.rgb(145, 82, 0) : Color.rgb(150, 30, 30));
     }
+
     private void showFailure(String message) {
-        runButton.setEnabled(true); cancelButton.setEnabled(false);
-        status.setText(message); status.setTextColor(Color.rgb(150, 30, 30));
+        runButton.setEnabled(true);
+        cancelButton.setEnabled(false);
+        status.setText(message);
+        status.setTextColor(Color.rgb(150, 30, 30));
     }
-    private static void write(File target, String content) throws Exception {
-        try (FileOutputStream output = new FileOutputStream(target)) {
-            output.write(content.getBytes(StandardCharsets.UTF_8));
-        }
-    }
+
     private static long usedHeapBytes() {
         Runtime runtime = Runtime.getRuntime();
         return Math.max(0L, runtime.totalMemory() - runtime.freeMemory());
     }
+
     private static long availableMemoryBytes() {
         Runtime runtime = Runtime.getRuntime();
         return Math.max(0L, runtime.maxMemory() - usedHeapBytes());
     }
+
     private static String escape(String value) {
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r");
     }
+
     private TextView text(String value, int sp, boolean bold) {
         TextView view = new TextView(this);
-        view.setText(value); view.setTextSize(sp); view.setTextColor(Color.rgb(35, 39, 42));
+        view.setText(value);
+        view.setTextSize(sp);
+        view.setTextColor(Color.rgb(35, 39, 42));
         if (bold) view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         return view;
     }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
