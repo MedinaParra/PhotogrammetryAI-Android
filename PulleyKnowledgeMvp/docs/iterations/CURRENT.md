@@ -16,6 +16,38 @@
 - Se adoptó una tolerancia máxima de 30 mm en radio exterior como condición necesaria de coincidencia.
 - La base actual no está autorizada para identificación automática industrial.
 
+## Avance global estimado
+
+### Resultado al 2026-07-21
+
+- **Avance integral del roadmap R0–R8: 25 %.**
+- **Madurez funcional del prototipo alpha: aproximadamente 55 %.**
+- **Preparación para uso industrial/metrológico: aproximadamente 5 %.**
+
+El porcentaje principal del proyecto es el **25 %**, porque mide el recorrido completo hasta una herramienta Android robusta, trazable, validada físicamente y calificada para apoyar decisiones de ingeniería. No mide solamente la cantidad de código existente.
+
+### Cálculo ponderado
+
+| Fase | Peso del roadmap | Avance de la fase | Contribución |
+|---|---:|---:|---:|
+| R0 — Gobierno de evidencia | 8 % | 70 % | 5,60 % |
+| R1 — Migración del modelo dimensional | 12 % | 10 % | 1,20 % |
+| R2 — Saneamiento de familias históricas | 10 % | 25 % | 2,50 % |
+| R3 — Motor de identificación geométrica | 12 % | 15 % | 1,80 % |
+| R4 — Fotogrametría robusta para taller | 20 % | 45 % | 9,00 % |
+| R5 — Optimización y calibración | 15 % | 5 % | 0,75 % |
+| R6 — Robustez Android y dispositivos | 10 % | 10 % | 1,00 % |
+| R7 — STEP, componentes y ensamblaje | 8 % | 45 % | 3,60 % |
+| R8 — Calificación de ingeniería | 5 % | 0 % | 0,00 % |
+| **Total** | **100 %** |  | **25,45 % → 25 %** |
+
+### Interpretación
+
+- El prototipo ya tiene una base técnica importante: captura, persistencia, reconstrucción experimental, pruebas sintéticas y empaquetado STEP.
+- El avance global permanece en 25 % porque todavía faltan el nuevo modelo OT/plano/revisión, la migración de datos, bundle adjustment, calibración, pruebas reales en teléfonos y calificación metrológica.
+- El porcentaje solo debe aumentar cuando una fase cumple evidencia y puertas de salida documentadas.
+- Una implementación compilada sin prueba real puede aumentar la madurez alpha, pero no necesariamente el avance industrial.
+
 ## Iteración actual o última cerrada
 
 ### ITER-002 — Auditoría Drive de código, OT, planos y cotas
