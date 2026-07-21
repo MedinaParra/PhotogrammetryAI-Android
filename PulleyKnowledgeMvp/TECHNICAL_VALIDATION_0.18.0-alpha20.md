@@ -14,7 +14,7 @@ El objetivo inmediato es separar el estado real del código de las afirmaciones 
 | Dos anillos/12 sectores/30 fotos | Implementado | Lógica Android, SQLite y pruebas puras | Falta recorrido físico completo y recuperación bajo interrupciones reales. |
 | Metadatos, IMU y calidad | Implementado | Persistencia y gates locales | Sensores son priors; no sustituyen pose visual calibrada. |
 | SHA-256 y ZIP | Implementado | Código Android y SAF | Falta ensayo de archivos grandes y espacio insuficiente en hardware. |
-| Features y matching | Implementado, experimental | Harris + descriptor binario de 64 bits; ratio, simetría y cobertura espacial | Sensible a superficies repetitivas, reflejos, pintura uniforme y cambios fuertes de escala/rotación. |
+| Features y matching | Implementado, experimental | Harris + descriptor binario de 64 bits; ratio, simetría, cobertura y coherencia | Sensible a superficies repetitivas, reflejos, pintura uniforme y cambios fuertes de escala/rotación. |
 | Matriz fundamental | Implementado y probado sintéticamente | Ocho puntos normalizados, rank-2, RANSAC, Sampson | Falta banco de imágenes reales con ground truth. |
 | Matriz esencial y pose | Implementado y probado sintéticamente | Cuatro soluciones, cheirality y paralaje | Intrínsecos Camera2 no equivalen a calibración completa de distorsión. |
 | Triangulación | Implementado y probado sintéticamente | DLT, profundidad, paralaje y reproyección | No existe refinamiento no lineal por observación. |
@@ -31,22 +31,26 @@ El objetivo inmediato es separar el estado real del código de las afirmaciones 
 1. La rama `product/single-device-photogrammetry-v1` contiene más código funcional que `agent/core-step-tracking-foundation` y `main` y es la base correcta.
 2. El README anterior era contradictorio: simultáneamente describía funciones integradas y las marcaba como no implementadas.
 3. La alpha19 no captura necesariamente el JPEG de mayor resolución; selecciona una resolución entre 3 y 12,5 megapíxeles.
-4. El matching anterior podía aprobar muchas correspondencias concentradas en una zona pequeña. Alpha20 añade distribución espacial en detección y en el gate del par.
-5. El ratio test y la simetría sí existían, pero el segundo vecino no se trataba explícitamente cuando no estaba disponible.
-6. La matriz fundamental usa normalización y rank-2; la pose esencial evalúa las cuatro soluciones y aplica cheirality.
-7. El denominado grafo global no realiza bundle adjustment: propaga poses por las mejores aristas y mide residuos de ciclos.
-8. La escala de pares usa un prior de órbita derivado de sectores/IMU. Debe mantenerse como prior y nunca como medida absoluta.
-9. La APK alpha19 contiene únicamente `arm64-v8a`. Agregar `armeabi-v7a` requiere reconstruir y validar todo el cierre OCCT para 32 bits.
-10. El CI actual es fuerte para regresiones sintéticas y empaquetado, pero no sustituye instalación, ejecución JNI, temperatura, memoria o repetibilidad física.
+4. El matching anterior podía aprobar muchas correspondencias concentradas en una zona pequeña.
+5. Una primera prueba alpha20 reveló otra degeneración: una textura repetitiva producía numerosas correspondencias distribuidas, pero sin consenso de desplazamiento. El gate ahora exige cantidad, cobertura y coherencia simultáneamente.
+6. El ratio test y la simetría ya existían; alpha20 conserva ambos y trata explícitamente la ausencia de segundo vecino.
+7. La matriz fundamental usa normalización y rank-2; la pose esencial evalúa las cuatro soluciones y aplica cheirality.
+8. El denominado grafo global no realiza bundle adjustment: propaga poses por las mejores aristas y mide residuos de ciclos.
+9. La escala de pares usa un prior de órbita derivado de sectores/IMU. Debe mantenerse como prior y nunca como medida absoluta.
+10. La APK contiene únicamente `arm64-v8a`. Agregar `armeabi-v7a` requiere reconstruir y validar todo el cierre OCCT para 32 bits.
+11. El CI es fuerte para regresiones sintéticas y empaquetado, pero no sustituye instalación, ejecución JNI, temperatura, memoria o repetibilidad física.
 
 ## Cambios alpha20
 
 - Distribución de características en una grilla 8 × 6 con segunda pasada de relleno.
 - Correspondencia mutua y ratio test conservados.
 - Gate de cobertura de correspondencias en grilla 6 × 4.
-- Prueba negativa para impedir que un parche localizado sea clasificado como geometría utilizable.
+- Gate adicional de consenso para no promover correspondencias repetitivas incoherentes.
+- Pruebas positivas y negativas para textura coherente, parche localizado y patrón repetitivo ambiguo.
 - Versión incrementada a `0.18.0-alpha20`.
 - README corregido para reflejar implementación y límites reales.
+- `namespace`, `minSdk` y `targetSdk` centralizados en Gradle, eliminando duplicación del manifiesto.
+- Android Gradle Plugin actualizado a `8.7.3`, compatible con API 35 y Gradle 8.9.
 
 ## Pruebas que siguen siendo obligatorias
 
