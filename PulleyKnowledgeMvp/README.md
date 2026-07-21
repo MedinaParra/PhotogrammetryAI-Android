@@ -80,4 +80,20 @@ PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
 
 ## Validación
 
-El workflow `.github/workflows/build-pulley-mvp-apk.yml` ejecuta las pruebas puras, verifica el hash del AAR, compila la APK y audita el cierre nativo incluido. Los detalles y límites de cada iteración se registran en `TECHNICAL_VALIDATION_0.18.0-alpha20.md`.
+El workflow `.github/workflows/build-pulley-mvp-apk.yml` ejecuta las pruebas puras, verifica el hash del AAR, compila la APK y audita el cierre nativo incluido. Los detalles y límites de alpha20 se registran en `TECHNICAL_VALIDATION_0.18.0-alpha20.md`.
+
+## Roadmap e historial de iteraciones
+
+- Roadmap profesional: `docs/ROADMAP_ENGINEERING.md`.
+- Estado actual y siguiente iteración: `docs/iterations/CURRENT.md`.
+- Historial inmutable: `docs/iterations/history/`.
+- Plantilla obligatoria: `docs/iterations/ITERATION_TEMPLATE.md`.
+- Reglas del proceso: `docs/iterations/README.md`.
+
+Antes de cerrar una iteración debe ejecutarse:
+
+```bash
+python3 PulleyKnowledgeMvp/tools/validate_iteration_history.py
+```
+
+GitHub Actions también ejecuta esta validación mediante `.github/workflows/validate-iteration-history.yml`. Una iteración no se considera cerrada si no conserva sus resultados, riesgos y la siguiente iteración obligatoria.
