@@ -198,7 +198,7 @@ Disponible: estructura fail-closed, esquema de campaña y diagnóstico automáti
 
 Pendiente: repetibilidad, reproducibilidad, instrumentos trazables, incertidumbre, criterios por uso, revisión de calidad y versión calificada.
 
-## 7. Iteraciones cerradas recientes
+### Iteraciones cerradas recientes
 
 - ITER-007: integración runtime del safety gate y fallback BA.
 - ITER-008: productores de degeneración visual.
@@ -211,7 +211,7 @@ Pendiente: repetibilidad, reproducibilidad, instrumentos trazables, incertidumbr
 
 Los registros completos están en `docs/iterations/history/`.
 
-## 8. Protocolo obligatorio de iteraciones
+## 7. Protocolo obligatorio de iteraciones
 
 Cada iteración debe:
 
@@ -226,7 +226,7 @@ Cada iteración debe:
 
 Una iteración no se considera cerrada sin CI, historial y siguiente paso.
 
-## 9. Estrategia de versiones
+## 8. Estrategia de versiones
 
 - `alpha`: implementación y pruebas sintéticas.
 - `device-alpha`: ejecución real controlada en teléfonos objetivo.
@@ -234,7 +234,7 @@ Una iteración no se considera cerrada sin CI, historial y siguiente paso.
 - `validation-candidate`: protocolo metrológico ejecutado y en revisión.
 - `qualified`: aprobación técnica y de calidad para un uso delimitado.
 
-## 10. Próxima iteración obligatoria
+## 9. Próxima iteración obligatoria
 
 ### ITER-015 — Checkpoints profundos, recuperación transaccional y campaña reproducible
 
