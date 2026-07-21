@@ -9,12 +9,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** Creates a portable, auditable session package without network access. */
+/** Creates a portable package using only the active committed runtime evidence generation. */
 public final class SessionPackageExporter {
     private SessionPackageExporter() {}
 
@@ -29,30 +31,63 @@ public final class SessionPackageExporter {
         String safe = safeName(session.label);
         File output = new File(exportDir, safe + "_" + session.id.substring(0, 8) + ".zip");
         File sessionDir = store.sessionDir(sessionId);
-        try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(output)))) {
-            putText(zip, "manifest.json", manifest(session, frames));
-            copyIfExists(zip, new File(sessionDir, "overlap_report.json"), "overlap_report.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_frame_cache.json"),
-                    "runtime/runtime_frame_cache.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_supplemental_metrics.json"),
-                    "runtime/runtime_supplemental_metrics.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_ba_window.json"),
-                    "runtime/runtime_ba_window.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_telemetry.json"),
-                    "runtime/runtime_telemetry.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_device_diagnostics.json"),
-                    "runtime/runtime_device_diagnostics.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_abort.json"),
-                    "runtime/runtime_abort.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_audit.json"),
-                    "runtime/runtime_audit.json");
+        File activeRuntime = RuntimeEvidenceTransactionCore.activeDirectory(sessionDir);
+        String activeGeneration = activeRuntime == null ? null : activeRuntime.getName();
+        try (ZipOutputStream zip = new ZipOutputStream(
+                new BufferedOutputStream(new FileOutputStream(output)))) {
+            putText(zip, "manifest.json", manifest(session, frames, activeGeneration));
+            if (activeRuntime != null) {
+                copyDirectory(zip, activeRuntime, activeRuntime, "runtime/");
+                copyIfExists(zip, new File(activeRuntime, "overlap_report.json"),
+                        "overlap_report.json");
+            } else {
+                copyLegacyRuntime(zip, sessionDir);
+            }
             for (CaptureStore.Frame frame : frames) {
                 File source = new File(frame.filePath);
                 if (!source.isFile()) continue;
-                copyEntry(zip, source, String.format(Locale.ROOT, "frames/frame_%04d.jpg", frame.sequence));
+                copyEntry(zip, source,
+                        String.format(Locale.ROOT, "frames/frame_%04d.jpg", frame.sequence));
             }
         }
         return output;
+    }
+
+    private static void copyLegacyRuntime(ZipOutputStream zip, File sessionDir) throws Exception {
+        copyIfExists(zip, new File(sessionDir, "overlap_report.json"), "overlap_report.json");
+        copyIfExists(zip, new File(sessionDir, "runtime_frame_cache.json"),
+                "runtime/runtime_frame_cache.json");
+        copyIfExists(zip, new File(sessionDir, "runtime_supplemental_metrics.json"),
+                "runtime/runtime_supplemental_metrics.json");
+        copyIfExists(zip, new File(sessionDir, "runtime_ba_window.json"),
+                "runtime/runtime_ba_window.json");
+        copyIfExists(zip, new File(sessionDir, "runtime_telemetry.json"),
+                "runtime/runtime_telemetry.json");
+        copyIfExists(zip, new File(sessionDir, "runtime_device_diagnostics.json"),
+                "runtime/runtime_device_diagnostics.json");
+        copyIfExists(zip, new File(sessionDir, "runtime_abort.json"),
+                "runtime/runtime_abort.json");
+        copyIfExists(zip, new File(sessionDir, "runtime_audit.json"),
+                "runtime/runtime_audit.json");
+    }
+
+    private static void copyDirectory(ZipOutputStream zip, File root, File current,
+                                      String prefix) throws Exception {
+        File[] children = current.listFiles();
+        if (children == null) return;
+        Arrays.sort(children, new Comparator<File>() {
+            @Override public int compare(File a, File b) {
+                return a.getName().compareTo(b.getName());
+            }
+        });
+        for (File child : children) {
+            if (child.isDirectory()) {
+                copyDirectory(zip, root, child, prefix);
+            } else if (child.isFile()) {
+                String relative = root.toURI().relativize(child.toURI()).getPath();
+                copyEntry(zip, child, prefix + relative);
+            }
+        }
     }
 
     private static void copyIfExists(ZipOutputStream zip, File source, String name) throws Exception {
@@ -69,7 +104,8 @@ public final class SessionPackageExporter {
         zip.closeEntry();
     }
 
-    private static String manifest(CaptureStore.Session session, List<CaptureStore.Frame> frames) {
+    private static String manifest(CaptureStore.Session session, List<CaptureStore.Frame> frames,
+                                   String activeGeneration) {
         long freeBytes = frames.isEmpty() ? 1024L * 1024L * 1024L
                 : new File(frames.get(0).filePath).getUsableSpace();
         CaptureReadiness.Result readiness = CaptureReadiness.evaluate(
@@ -77,7 +113,7 @@ public final class SessionPackageExporter {
                 session.shellLengthMm, freeBytes);
         StringBuilder json = new StringBuilder(4096 + frames.size() * 500);
         json.append("{\n");
-        field(json, "schema", "skm-polea-capture/4", true);
+        field(json, "schema", "skm-polea-capture/5", true);
         field(json, "sessionId", session.id, true);
         field(json, "label", session.label, true);
         field(json, "status", session.status, true);
@@ -92,6 +128,8 @@ public final class SessionPackageExporter {
         number(json, "rejected", session.rejected, true);
         field(json, "reconstructionReady", Boolean.toString(readiness.ready()), true, false);
         field(json, "runtimeEvidenceDirectory", "runtime/", true);
+        field(json, "runtimeActiveGeneration", activeGeneration, true);
+        field(json, "runtimeEvidenceMode", activeGeneration == null ? "LEGACY" : "COMMITTED_GENERATION", true);
         field(json, "runtimeBudgetMs", "180000", true, false);
         json.append("  \"readinessSummary\": \"").append(escape(readiness.summary())).append("\",\n");
         json.append("  \"frames\": [\n");
@@ -131,7 +169,8 @@ public final class SessionPackageExporter {
     private static void field(StringBuilder json, String key, String value, boolean comma) {
         field(json, key, value, comma, true);
     }
-    private static void field(StringBuilder json, String key, String value, boolean comma, boolean quoted) {
+    private static void field(StringBuilder json, String key, String value,
+                              boolean comma, boolean quoted) {
         json.append("  \"").append(key).append("\": ");
         if (value == null || value.isEmpty()) json.append("null");
         else if (quoted) json.append('"').append(escape(value)).append('"');
@@ -145,7 +184,8 @@ public final class SessionPackageExporter {
         json.append('\n');
     }
     private static void numberOrNull(StringBuilder json, String key, Number value, boolean comma) {
-        json.append("  \"").append(key).append("\": ").append(value == null ? "null" : value.toString());
+        json.append("  \"").append(key).append("\": ")
+                .append(value == null ? "null" : value.toString());
         if (comma) json.append(',');
         json.append('\n');
     }
@@ -159,8 +199,10 @@ public final class SessionPackageExporter {
         json.append('"').append(key).append("\":").append(value);
         if (comma) json.append(',');
     }
-    private static void inlineNullableNumber(StringBuilder json, String key, Number value, boolean comma) {
-        json.append('"').append(key).append("\":").append(value == null ? "null" : value.toString());
+    private static void inlineNullableNumber(StringBuilder json, String key,
+                                             Number value, boolean comma) {
+        json.append('"').append(key).append("\":")
+                .append(value == null ? "null" : value.toString());
         if (comma) json.append(',');
     }
     private static String escape(String value) {
@@ -169,7 +211,8 @@ public final class SessionPackageExporter {
                 .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
     private static String safeName(String raw) {
-        String safe = raw == null ? "captura_polea" : raw.trim().replaceAll("[^A-Za-z0-9._-]+", "_");
+        String safe = raw == null ? "captura_polea"
+                : raw.trim().replaceAll("[^A-Za-z0-9._-]+", "_");
         return safe.isEmpty() ? "captura_polea" : safe;
     }
 }
