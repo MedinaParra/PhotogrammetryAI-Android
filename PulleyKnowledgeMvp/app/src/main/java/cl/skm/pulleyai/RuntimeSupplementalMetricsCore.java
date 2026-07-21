@@ -96,9 +96,6 @@ public final class RuntimeSupplementalMetricsCore {
             this.solvedPairModels = solvedPairModels;
         }
         public boolean complete() { return supplemental != null && supplemental.complete(); }
-        public PhotogrammetrySafetyGateAdapter.SupplementalMetrics toSafetyGate() {
-            return PhotogrammetrySupplementalMetricsAdapter.toSafetyGate(supplemental);
-        }
         public String summary() {
             return "Métricas " + status + " · frames " + frameSamples + " · pares " + pairSamples
                     + " · H/F " + solvedPairModels
