@@ -7,7 +7,7 @@
 
 ## Estado acumulado
 
-- Alpha29 compila para `arm64-v8a` con STEP/OCCT, sujeto al cierre CI de ITER-011.
+- Alpha29 compila para `arm64-v8a` con STEP/OCCT.
 - Evidencia dimensional, identificación, safety gate, BA local, productores visuales y pose graph mantienen gates sintéticos.
 - La validación runtime ya está expuesta en una pantalla del producto.
 - Existe un formulario fail-closed para registrar campañas físicas reales y guardar evidencia JSON local.
@@ -16,8 +16,8 @@
 
 ## Avance global estimado
 
-- **Avance integral provisional: 74 % después de CI.**
-- **Madurez alpha provisional: 93 %.**
+- **Avance integral: 74 %.**
+- **Madurez alpha: 93 %.**
 - **Preparación industrial/metrológica: 16 %.**
 
 El incremento se atribuye a integración visible, auditoría runtime y preparación de campañas. La preparación industrial solo sube un punto porque Samsung A15, Honor X5C e instrumentos trazables no fueron ejecutados.
@@ -34,7 +34,9 @@ Registro: `history/ITER-011_2026-07-21_runtime-review-device-campaign-ui.md`
 - formulario de campaña física;
 - evidencia JSON local;
 - gate v54 incorporado;
-- alpha29 en validación CI.
+- producto run `#557`: `success`;
+- historial run `#127`: `success`;
+- APK alpha29 publicada.
 
 ## Bloqueos activos
 
