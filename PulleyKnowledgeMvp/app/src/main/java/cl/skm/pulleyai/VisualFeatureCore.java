@@ -1,5 +1,7 @@
 package cl.skm.pulleyai;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -13,16 +15,19 @@ public final class VisualFeatureCore {
     private static final int MATCH_GRID_X = 6;
     private static final int MATCH_GRID_Y = 4;
     private static final int[][] PAIRS = buildPairs();
+    private static volatile Method optionalCheckpoint;
+    private static volatile boolean checkpointLookupComplete;
 
-    private VisualFeatureCore() {
-    }
+    private VisualFeatureCore() {}
 
     public static FeatureSet detect(byte[] gray, int width, int height, int maxFeatures) {
+        checkpoint("FEATURE_DETECT_START");
         if (gray == null || width < 24 || height < 24 || gray.length < width * height) {
             return new FeatureSet(width, height, Collections.<Feature>emptyList(), 0, 0.0);
         }
         List<Candidate> candidates = new ArrayList<Candidate>();
         for (int y = RADIUS + 2; y < height - RADIUS - 2; y += 2) {
+            if ((y & 15) == 0) checkpoint("FEATURE_DETECT_ROW_" + y);
             for (int x = RADIUS + 2; x < width - RADIUS - 2; x += 2) {
                 double score = harris(gray, width, x, y);
                 if (score > 2_500_000.0 && localMaximum(gray, width, height, x, y, score)) {
@@ -30,6 +35,7 @@ public final class VisualFeatureCore {
                 }
             }
         }
+        checkpoint("FEATURE_DETECT_SELECT");
         Collections.sort(candidates, new Comparator<Candidate>() {
             @Override public int compare(Candidate a, Candidate b) {
                 return Double.compare(b.score, a.score);
@@ -43,8 +49,8 @@ public final class VisualFeatureCore {
         boolean[] selectedCandidate = new boolean[candidates.size()];
         List<Feature> features = new ArrayList<Feature>();
 
-        // Reserve capacity across the image so a textured patch cannot monopolize the set.
         for (int i = 0; i < candidates.size() && features.size() < limit; i++) {
+            if ((i & 63) == 0) checkpoint("FEATURE_SELECT_PRIMARY_" + i);
             Candidate candidate = candidates.get(i);
             int cell = cell(candidate.x, candidate.y, width, height, DETECTION_GRID_X, DETECTION_GRID_Y);
             if (perCell[cell] >= perCellCap || tooClose(features, candidate.x, candidate.y, 7)) continue;
@@ -54,8 +60,8 @@ public final class VisualFeatureCore {
             selectedCandidate[i] = true;
         }
 
-        // Fill unused capacity without discarding legitimate detail in textured regions.
         for (int i = 0; i < candidates.size() && features.size() < limit; i++) {
+            if ((i & 63) == 0) checkpoint("FEATURE_SELECT_FILL_" + i);
             if (selectedCandidate[i]) continue;
             Candidate candidate = candidates.get(i);
             if (tooClose(features, candidate.x, candidate.y, 7)) continue;
@@ -66,20 +72,24 @@ public final class VisualFeatureCore {
         }
 
         int occupied = occupied(perCell);
+        checkpoint("FEATURE_DETECT_COMPLETE");
         return new FeatureSet(width, height, features, occupied, occupied / (double) cellCount);
     }
 
     public static PairResult match(FeatureSet left, FeatureSet right) {
+        checkpoint("FEATURE_MATCH_START");
         if (left == null || right == null || left.features.isEmpty() || right.features.isEmpty()) {
             return new PairResult(Collections.<Match>emptyList(), 0.0, 0.0,
                     0, 0.0, 0, 0.0, "NO_FEATURES");
         }
         int[] leftBestForRight = new int[right.features.size()];
         for (int j = 0; j < right.features.size(); j++) {
+            if ((j & 31) == 0) checkpoint("FEATURE_MATCH_REVERSE_" + j);
             leftBestForRight[j] = best(right.features.get(j), left.features).index;
         }
         List<Match> matches = new ArrayList<Match>();
         for (int i = 0; i < left.features.size(); i++) {
+            if ((i & 31) == 0) checkpoint("FEATURE_MATCH_FORWARD_" + i);
             Feature a = left.features.get(i);
             Best best = best(a, right.features);
             if (best.index < 0 || best.distance > 24) continue;
@@ -105,8 +115,41 @@ public final class VisualFeatureCore {
                 && coherent >= 20 && coherenceRatio >= 0.45 ? "STRONG"
                 : matches.size() >= 12 && coverage >= 0.17
                 && coherent >= 8 && coherenceRatio >= 0.30 ? "USABLE" : "WEAK";
+        checkpoint("FEATURE_MATCH_COMPLETE");
         return new PairResult(matches, dx, dy, occupiedCells, coverage,
                 coherent, coherenceRatio, status);
+    }
+
+    /** Optional reflection keeps historical pure-Java gates independent of runtime classes. */
+    private static void checkpoint(String stage) {
+        Method method = optionalCheckpoint;
+        if (!checkpointLookupComplete) {
+            synchronized (VisualFeatureCore.class) {
+                if (!checkpointLookupComplete) {
+                    try {
+                        Class<?> bridge = Class.forName("cl.skm.pulleyai.RuntimeCancellationBridge");
+                        optionalCheckpoint = bridge.getMethod("checkpoint", String.class);
+                    } catch (ClassNotFoundException ignored) {
+                        optionalCheckpoint = null;
+                    } catch (NoSuchMethodException ignored) {
+                        optionalCheckpoint = null;
+                    }
+                    checkpointLookupComplete = true;
+                    method = optionalCheckpoint;
+                }
+            }
+        }
+        if (method == null) return;
+        try {
+            method.invoke(null, stage);
+        } catch (IllegalAccessException ignored) {
+            optionalCheckpoint = null;
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            throw new IllegalStateException(cause);
+        }
     }
 
     private static Best best(Feature query, List<Feature> candidates) {
