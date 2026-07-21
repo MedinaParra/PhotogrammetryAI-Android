@@ -91,9 +91,9 @@ public final class RuntimeReviewActivity extends Activity {
                     status.setText(outcome.summary()
                             + "\n\nBA runtime: ventana de observaciones aún no serializada; se exige fallback explícito."
                             + "\nRecursos: " + (resources ? "aptos" : "insuficientes"));
-                    status.setTextColor(outcome.decision.publishOptimizedGeometry
+                    status.setTextColor(outcome.decision.canPublishOptimizedGeometry()
                             ? Color.rgb(25, 108, 65)
-                            : outcome.decision.allowUnoptimizedFallback
+                            : outcome.decision.useUnoptimizedFallback
                             ? Color.rgb(145, 82, 0)
                             : Color.rgb(150, 30, 30));
                 });
