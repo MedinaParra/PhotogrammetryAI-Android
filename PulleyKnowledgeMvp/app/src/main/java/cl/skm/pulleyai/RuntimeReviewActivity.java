@@ -109,12 +109,19 @@ public final class RuntimeReviewActivity extends Activity {
 
                 boolean resources = storage >= 300L * 1024L * 1024L
                         && availableBefore >= 256L * 1024L * 1024L;
+                PhotogrammetrySupplementalMetricsCore.Result metrics = supplemental.supplemental;
+                PhotogrammetrySafetyGateAdapter.SupplementalMetrics gateMetrics =
+                        new PhotogrammetrySafetyGateAdapter.SupplementalMetrics(
+                                metrics.homographyDominanceRatio,
+                                metrics.blurryFrameFraction,
+                                metrics.reflectiveFrameFraction,
+                                metrics.repetitiveAmbiguityFraction);
                 RuntimeReconstructionCoordinator.Outcome outcome =
                         RuntimeReconstructionCoordinator.evaluate(
                                 RuntimeReviewActivity.this,
                                 sessionId,
                                 report,
-                                supplemental.toSafetyGate(),
+                                gateMetrics,
                                 window.ready ? window.problem : null,
                                 resources,
                                 false);
