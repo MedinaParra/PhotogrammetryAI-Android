@@ -29,10 +29,13 @@ public final class SessionPackageExporter {
         }
         String safe = safeName(session.label);
         File output = new File(exportDir, safe + "_" + session.id.substring(0, 8) + ".zip");
+        File sessionDir = store.sessionDir(sessionId);
         try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(output)))) {
             putText(zip, "manifest.json", manifest(session, frames));
-            File overlap = new File(store.sessionDir(sessionId), "overlap_report.json");
-            if (overlap.isFile()) copyEntry(zip, overlap, "overlap_report.json");
+            copyIfExists(zip, new File(sessionDir, "overlap_report.json"), "overlap_report.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_ba_window.json"), "runtime/runtime_ba_window.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_telemetry.json"), "runtime/runtime_telemetry.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_audit.json"), "runtime/runtime_audit.json");
             for (CaptureStore.Frame frame : frames) {
                 File source = new File(frame.filePath);
                 if (!source.isFile()) continue;
@@ -40,6 +43,10 @@ public final class SessionPackageExporter {
             }
         }
         return output;
+    }
+
+    private static void copyIfExists(ZipOutputStream zip, File source, String name) throws Exception {
+        if (source.isFile()) copyEntry(zip, source, name);
     }
 
     private static void copyEntry(ZipOutputStream zip, File source, String name) throws Exception {
@@ -61,7 +68,7 @@ public final class SessionPackageExporter {
                 session.shellLengthMm, freeBytes);
         StringBuilder json = new StringBuilder(4096 + frames.size() * 500);
         json.append("{\n");
-        field(json, "schema", "skm-polea-capture/1", true);
+        field(json, "schema", "skm-polea-capture/2", true);
         field(json, "sessionId", session.id, true);
         field(json, "label", session.label, true);
         field(json, "status", session.status, true);
@@ -75,6 +82,7 @@ public final class SessionPackageExporter {
         number(json, "accepted", session.accepted, true);
         number(json, "rejected", session.rejected, true);
         field(json, "reconstructionReady", Boolean.toString(readiness.ready()), true, false);
+        field(json, "runtimeEvidenceDirectory", "runtime/", true);
         json.append("  \"readinessSummary\": \"").append(escape(readiness.summary())).append("\",\n");
         json.append("  \"frames\": [\n");
         for (int i = 0; i < frames.size(); i++) {
