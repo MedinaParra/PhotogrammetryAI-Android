@@ -14,7 +14,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 
-/** Runs the real session report, reconstructs a bounded BA window and persists runtime evidence. */
+/** Runs real supplemental metrics, safety gate, bounded BA and runtime evidence. */
 public final class RuntimeReviewActivity extends Activity {
     public static final String EXTRA_SESSION_ID = "runtime_session_id";
 
@@ -46,7 +46,7 @@ public final class RuntimeReviewActivity extends Activity {
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
         TextView subtitle = text(
-                "La sesión se evalúa con el safety gate real. La ventana BA se construye desde poses, tracks, puntos y píxeles reales; una métrica faltante mantiene fallback explícito.",
+                "La sesión calcula homografía, degradación visual, safety gate y una ventana BA desde evidencia real. Solo un gate completo READY permite optimizar.",
                 14, false);
         subtitle.setPadding(0, dp(5), 0, dp(15));
         root.addView(subtitle);
@@ -57,7 +57,7 @@ public final class RuntimeReviewActivity extends Activity {
         root.addView(status);
 
         runButton = new Button(this);
-        runButton.setText("EJECUTAR SAFETY GATE, BA Y TELEMETRÍA");
+        runButton.setText("EJECUTAR MÉTRICAS, SAFETY GATE, BA Y TELEMETRÍA");
         runButton.setAllCaps(false);
         runButton.setOnClickListener(view -> runValidation());
         root.addView(runButton);
@@ -77,7 +77,7 @@ public final class RuntimeReviewActivity extends Activity {
             return;
         }
         runButton.setEnabled(false);
-        status.setText("Analizando correspondencias y construyendo ventana BA real…");
+        status.setText("Analizando correspondencias, degeneraciones y ventana BA…");
         final long startedAtEpochMs = System.currentTimeMillis();
         final long startedElapsedMs = SystemClock.elapsedRealtime();
         final long heapBefore = usedHeapBytes();
@@ -90,6 +90,12 @@ public final class RuntimeReviewActivity extends Activity {
             long peakPss = pssBefore;
             try {
                 SessionOverlapAnalyzer.Report report = SessionOverlapAnalyzer.analyze(store, sessionId);
+                peakHeap = Math.max(peakHeap, usedHeapBytes());
+                peakPss = Math.max(peakPss, Debug.getPss());
+
+                RuntimeSupplementalMetricsCore.Result supplemental =
+                        RuntimeSupplementalMetricsBuilder.build(store, sessionId, report);
+                RuntimeSupplementalMetricsBuilder.persist(store, sessionId, supplemental);
                 peakHeap = Math.max(peakHeap, usedHeapBytes());
                 peakPss = Math.max(peakPss, Debug.getPss());
 
@@ -108,7 +114,7 @@ public final class RuntimeReviewActivity extends Activity {
                                 RuntimeReviewActivity.this,
                                 sessionId,
                                 report,
-                                PhotogrammetrySafetyGateAdapter.SupplementalMetrics.unknown(),
+                                supplemental.toSafetyGate(),
                                 window.ready ? window.problem : null,
                                 resources,
                                 false);
@@ -133,16 +139,19 @@ public final class RuntimeReviewActivity extends Activity {
                 RuntimeTelemetryCore.Result telemetry = RuntimeTelemetryCore.evaluate(telemetryRecord);
                 write(new File(sessionDir, "runtime_telemetry.json"), telemetry.canonicalJson());
                 write(new File(sessionDir, "runtime_audit.json"),
-                        auditJson(outcome, window, telemetry));
+                        auditJson(outcome, window, supplemental, telemetry));
 
                 runOnUiThread(() -> {
                     runButton.setEnabled(true);
                     status.setText(outcome.summary()
-                            + "\n\n" + window.summary()
+                            + "\n\n" + supplemental.summary()
+                            + "\n" + window.summary()
                             + "\n" + telemetry.summary()
-                            + "\n\nEvidencia: runtime_ba_window.json, runtime_telemetry.json y runtime_audit.json"
-                            + (outcome.gate.state == PhotogrammetrySafetyGateCore.State.REVIEW
-                            ? "\nEl BA no se ejecutó porque el safety gate exige completar métricas faltantes."
+                            + "\n\nEvidencia runtime completa guardada en la sesión."
+                            + (!supplemental.complete()
+                            ? "\nLas métricas incompletas mantienen fallback y bloquean la optimización."
+                            : outcome.gate.state != PhotogrammetrySafetyGateCore.State.READY
+                            ? "\nLa evidencia está completa, pero una degeneración o calidad insuficiente impide el BA."
                             : ""));
                     status.setTextColor(outcome.decision.canPublishOptimizedGeometry()
                             ? Color.rgb(25, 108, 65)
@@ -164,9 +173,12 @@ public final class RuntimeReviewActivity extends Activity {
 
     private static String auditJson(RuntimeReconstructionCoordinator.Outcome outcome,
                                     RuntimeBundleWindowCore.Result window,
+                                    RuntimeSupplementalMetricsCore.Result supplemental,
                                     RuntimeTelemetryCore.Result telemetry) {
-        return "{\n\"schema\":\"skm-runtime-audit/1\""
+        return "{\n\"schema\":\"skm-runtime-audit/2\""
                 + ",\n\"auditId\":" + outcome.auditId
+                + ",\n\"supplementalStatus\":\"" + escape(supplemental.status) + "\""
+                + ",\n\"supplementalComplete\":" + supplemental.complete()
                 + ",\n\"gateState\":\"" + outcome.gate.state + "\""
                 + ",\n\"gateQuality\":" + outcome.gate.qualityScore
                 + ",\n\"decisionState\":\"" + outcome.decision.state + "\""
