@@ -3,8 +3,8 @@ package cl.skm.pulleyai;
 import android.content.Context;
 
 /**
- * Runtime service joining report qualification, bounded BA, conservative rotational refinement
- * and append-only audit. Missing or rejected rotation refinement preserves the stable base BA.
+ * Runtime service joining qualification, local BA, bounded rotations, conditioned focal
+ * refinement and append-only audit. Rejected later stages preserve the prior accepted result.
  */
 public final class RuntimeReconstructionCoordinator {
     private RuntimeReconstructionCoordinator() {}
@@ -24,10 +24,12 @@ public final class RuntimeReconstructionCoordinator {
 
         LocalBundleAdjustmentCore.Result ba = null;
         RotationalBundleAdjustmentCore.Result rotational = null;
+        ConditionedFocalBundleAdjustmentCore.Result focal = null;
         if (gate.canReconstructAutomatically() && resourceBudgetReady && !interrupted
                 && problem != null) {
-            rotational = RotationalBundleAdjustmentCore.optimize(problem, gate);
-            ba = rotational.bundleAdjustment;
+            focal = ConditionedFocalBundleAdjustmentCore.optimize(problem, gate);
+            rotational = focal.rotationalBundleAdjustment;
+            ba = focal.bundleAdjustment;
         }
         RuntimeReconstructionDecisionCore.Result decision =
                 RuntimeReconstructionDecisionCore.decide(gate, ba, problem != null,
@@ -40,23 +42,26 @@ public final class RuntimeReconstructionCoordinator {
         } finally {
             store.close();
         }
-        return new Outcome(gate, ba, rotational, decision, auditId);
+        return new Outcome(gate, ba, rotational, focal, decision, auditId);
     }
 
     public static final class Outcome {
         public final PhotogrammetrySafetyGateCore.Result gate;
         public final LocalBundleAdjustmentCore.Result bundleAdjustment;
         public final RotationalBundleAdjustmentCore.Result rotationalBundleAdjustment;
+        public final ConditionedFocalBundleAdjustmentCore.Result focalBundleAdjustment;
         public final RuntimeReconstructionDecisionCore.Result decision;
         public final long auditId;
 
         Outcome(PhotogrammetrySafetyGateCore.Result gate,
                 LocalBundleAdjustmentCore.Result bundleAdjustment,
                 RotationalBundleAdjustmentCore.Result rotationalBundleAdjustment,
+                ConditionedFocalBundleAdjustmentCore.Result focalBundleAdjustment,
                 RuntimeReconstructionDecisionCore.Result decision, long auditId) {
             this.gate = gate;
             this.bundleAdjustment = bundleAdjustment;
             this.rotationalBundleAdjustment = rotationalBundleAdjustment;
+            this.focalBundleAdjustment = focalBundleAdjustment;
             this.decision = decision;
             this.auditId = auditId;
         }
@@ -65,6 +70,8 @@ public final class RuntimeReconstructionCoordinator {
             return gate.summary() + "\n" + decision.summary()
                     + (rotationalBundleAdjustment == null ? ""
                     : "\n" + rotationalBundleAdjustment.summary())
+                    + (focalBundleAdjustment == null ? ""
+                    : "\n" + focalBundleAdjustment.summary())
                     + "\nAuditoría #" + auditId;
         }
     }
