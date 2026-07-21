@@ -50,7 +50,7 @@ public final class RuntimeReviewActivity extends Activity {
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
         TextView subtitle = text(
-                "El análisis tiene 180 s de presupuesto, checkpoints profundos y refinamiento rotacional acotado. Solo una generación atómica comprometida puede quedar vigente.",
+                "El análisis tiene 180 s de presupuesto, checkpoints profundos y BA acotado de puntos, traslaciones, rotaciones y focal. La cámara 0, el principal point y la distorsión permanecen fijos.",
                 14, false);
         subtitle.setPadding(0, dp(5), 0, dp(15));
         root.addView(subtitle);
@@ -167,6 +167,10 @@ public final class RuntimeReviewActivity extends Activity {
                 transaction.stageText("runtime_rotational_ba.json",
                         outcome.rotationalBundleAdjustment.canonicalJson());
             }
+            if (outcome.focalBundleAdjustment != null) {
+                transaction.stageText("runtime_focal_ba.json",
+                        outcome.focalBundleAdjustment.canonicalJson());
+            }
 
             long heapAfter = usedHeapBytes();
             long pssAfter = Debug.getPss();
@@ -193,7 +197,7 @@ public final class RuntimeReviewActivity extends Activity {
                     + "\n" + supplemental.summary() + "\n" + window.summary()
                     + "\n" + diagnostics.summary() + "\n" + telemetry.summary()
                     + "\n" + manifest.summary() + "\n" + publication.summary()
-                    + "\n\nLos intervalos de residuos son estadísticos y no metrológicos."
+                    + "\n\nLos intervalos de residuos y la sensibilidad focal son estadísticos, no metrológicos ni una calibración física."
                     + "\nSolo esta generación comprometida queda vigente para exportación.";
             runOnUiThread(() -> showCompleted(summary,
                     outcome.decision.canPublishOptimizedGeometry(),
@@ -340,7 +344,8 @@ public final class RuntimeReviewActivity extends Activity {
                                     RuntimeTelemetryCore.Result telemetry,
                                     RuntimeExecutionControlCore.Token control) {
         RotationalBundleAdjustmentCore.Result rotational = outcome.rotationalBundleAdjustment;
-        return "{\n\"schema\":\"skm-runtime-audit/5\""
+        ConditionedFocalBundleAdjustmentCore.Result focal = outcome.focalBundleAdjustment;
+        return "{\n\"schema\":\"skm-runtime-audit/6\""
                 + ",\n\"auditId\":" + outcome.auditId
                 + ",\n\"cacheStatus\":\"" + escape(cache.status) + "\""
                 + ",\n\"decodePasses\":" + cache.decodePasses
@@ -358,6 +363,13 @@ public final class RuntimeReviewActivity extends Activity {
                 + (rotational == null ? "null" : number(rotational.maximumRotationDegrees))
                 + ",\n\"residualStatisticsLabel\":"
                 + (rotational == null ? "null" : "\"" + rotational.residualStatistics.label + "\"")
+                + ",\n\"focalStatus\":"
+                + (focal == null ? "null" : "\"" + escape(focal.status) + "\"")
+                + ",\n\"focalApplied\":" + (focal != null && focal.focalApplied)
+                + ",\n\"maximumFocalScaleFraction\":"
+                + (focal == null ? "null" : number(focal.maximumScaleFraction))
+                + ",\n\"focalSensitivityLabel\":"
+                + (focal == null ? "null" : "\"" + focal.sensitivity.label + "\"")
                 + ",\n\"diagnosticsState\":\"" + diagnostics.state + "\""
                 + ",\n\"telemetryState\":\"" + telemetry.state + "\""
                 + ",\n\"controlState\":\"" + control.state() + "\"\n}";
