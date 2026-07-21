@@ -16,8 +16,7 @@ import java.util.zip.ZipOutputStream;
 
 /** Creates a portable, auditable session package without network access. */
 public final class SessionPackageExporter {
-    private SessionPackageExporter() {
-    }
+    private SessionPackageExporter() {}
 
     public static File build(Context context, CaptureStore store, String sessionId) throws Exception {
         CaptureStore.Session session = store.getSession(sessionId);
@@ -33,9 +32,14 @@ public final class SessionPackageExporter {
         try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(output)))) {
             putText(zip, "manifest.json", manifest(session, frames));
             copyIfExists(zip, new File(sessionDir, "overlap_report.json"), "overlap_report.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_ba_window.json"), "runtime/runtime_ba_window.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_telemetry.json"), "runtime/runtime_telemetry.json");
-            copyIfExists(zip, new File(sessionDir, "runtime_audit.json"), "runtime/runtime_audit.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_supplemental_metrics.json"),
+                    "runtime/runtime_supplemental_metrics.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_ba_window.json"),
+                    "runtime/runtime_ba_window.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_telemetry.json"),
+                    "runtime/runtime_telemetry.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_audit.json"),
+                    "runtime/runtime_audit.json");
             for (CaptureStore.Frame frame : frames) {
                 File source = new File(frame.filePath);
                 if (!source.isFile()) continue;
@@ -60,15 +64,14 @@ public final class SessionPackageExporter {
     }
 
     private static String manifest(CaptureStore.Session session, List<CaptureStore.Frame> frames) {
-        long freeBytes = frames.isEmpty()
-                ? 1024L * 1024L * 1024L
+        long freeBytes = frames.isEmpty() ? 1024L * 1024L * 1024L
                 : new File(frames.get(0).filePath).getUsableSpace();
         CaptureReadiness.Result readiness = CaptureReadiness.evaluate(
                 session.accepted, session.rejected, session.lowMask, session.highMask,
                 session.shellLengthMm, freeBytes);
         StringBuilder json = new StringBuilder(4096 + frames.size() * 500);
         json.append("{\n");
-        field(json, "schema", "skm-polea-capture/2", true);
+        field(json, "schema", "skm-polea-capture/3", true);
         field(json, "sessionId", session.id, true);
         field(json, "label", session.label, true);
         field(json, "status", session.status, true);
@@ -118,11 +121,9 @@ public final class SessionPackageExporter {
         zip.write(text.getBytes(StandardCharsets.UTF_8));
         zip.closeEntry();
     }
-
     private static void field(StringBuilder json, String key, String value, boolean comma) {
         field(json, key, value, comma, true);
     }
-
     private static void field(StringBuilder json, String key, String value, boolean comma, boolean quoted) {
         json.append("  \"").append(key).append("\": ");
         if (value == null || value.isEmpty()) json.append("null");
@@ -131,42 +132,35 @@ public final class SessionPackageExporter {
         if (comma) json.append(',');
         json.append('\n');
     }
-
     private static void number(StringBuilder json, String key, Number value, boolean comma) {
         json.append("  \"").append(key).append("\": ").append(value);
         if (comma) json.append(',');
         json.append('\n');
     }
-
     private static void numberOrNull(StringBuilder json, String key, Number value, boolean comma) {
         json.append("  \"").append(key).append("\": ").append(value == null ? "null" : value.toString());
         if (comma) json.append(',');
         json.append('\n');
     }
-
     private static void inlineString(StringBuilder json, String key, String value, boolean comma) {
         json.append('"').append(key).append("\":");
         if (value == null) json.append("null");
         else json.append('"').append(escape(value)).append('"');
         if (comma) json.append(',');
     }
-
     private static void inlineNumber(StringBuilder json, String key, Number value, boolean comma) {
         json.append('"').append(key).append("\":").append(value);
         if (comma) json.append(',');
     }
-
     private static void inlineNullableNumber(StringBuilder json, String key, Number value, boolean comma) {
         json.append('"').append(key).append("\":").append(value == null ? "null" : value.toString());
         if (comma) json.append(',');
     }
-
     private static String escape(String value) {
         if (value == null) return "";
         return value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
-
     private static String safeName(String raw) {
         String safe = raw == null ? "captura_polea" : raw.trim().replaceAll("[^A-Za-z0-9._-]+", "_");
         return safe.isEmpty() ? "captura_polea" : safe;
