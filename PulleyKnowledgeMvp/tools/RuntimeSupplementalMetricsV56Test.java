@@ -16,7 +16,7 @@ public final class RuntimeSupplementalMetricsV56Test {
     private static void testCompleteVolumetricEvidenceAllowsReadyGate() {
         List<RuntimeSupplementalMetricsCore.FrameSample> frames = frames(false);
         List<RuntimeSupplementalMetricsCore.PairSample> pairs = new ArrayList<RuntimeSupplementalMetricsCore.PairSample>();
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 8; i++) {
             pairs.add(new RuntimeSupplementalMetricsCore.PairSample(
                     pointPairs(true), 56, 0.8, 0.58, 0.82, 0.70));
         }
@@ -46,7 +46,7 @@ public final class RuntimeSupplementalMetricsV56Test {
     private static void testPlanarReflectiveRepetitiveEvidenceBlocks() {
         List<RuntimeSupplementalMetricsCore.FrameSample> frames = frames(true);
         List<RuntimeSupplementalMetricsCore.PairSample> pairs = new ArrayList<RuntimeSupplementalMetricsCore.PairSample>();
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 8; i++) {
             pairs.add(new RuntimeSupplementalMetricsCore.PairSample(
                     pointPairs(false), 38, 1.4, 0.94, 0.34, 0.22));
         }
