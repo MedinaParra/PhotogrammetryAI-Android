@@ -3,27 +3,25 @@
 **Actualizado:** 2026-07-21  
 **Rama:** `agent/photogrammetry-validation-alpha20`  
 **PR activo:** `#8` — borrador  
-**Versión Android:** `0.18.0-alpha25`
+**Versión Android:** `0.18.0-alpha26`
 
 ## Estado acumulado
 
 - La aplicación compila para `arm64-v8a` e incluye STEP/OCCT.
-- La evidencia dimensional está versionada por código, OT, plano, revisión, dimensión y superficie.
-- La identificación multivariable y la puerta de radio de 30 mm están probadas.
-- El safety gate fotogramétrico usa estados `READY`, `REVIEW` y `BLOCKED`.
-- Existe BA local acotado con cámara 0 fija, pérdida Huber y priors de traslación.
-- Existe una política runtime que acepta geometría optimizada solo cuando el gate y el BA son válidos.
-- Interrupción, recursos insuficientes o ausencia de problema BA producen fallback explícito y `REVIEW`.
-- Gate `BLOCKED` no promueve geometría.
-- Las decisiones runtime se auditan en SQLite append-only.
-- `CaptureActivity` todavía no llama al coordinador nuevo y el reporte no expone todas las observaciones BA.
+- La evidencia dimensional y la identificación por OT/plano/revisión permanecen auditables.
+- Existe safety gate fotogramétrico fail-closed y BA local acotado.
+- La política runtime distingue geometría optimizada, fallback revisable y bloqueo.
+- Existe RANSAC de homografía y competencia contra soporte fundamental.
+- Existen productores agregados de desenfoque, reflejos/saturación y ambigüedad repetitiva.
+- Las métricas faltantes permanecen como `NaN` y brechas de evidencia.
+- Los productores de ITER-008 todavía no se invocan automáticamente dentro de `SessionOverlapAnalyzer`.
 - No existe calibración física ni validación metrológica.
 
 ## Avance global estimado
 
-- **Avance integral R0–R8: 59 %.**
-- **Madurez funcional alpha: aproximadamente 85 %.**
-- **Preparación industrial/metrológica: aproximadamente 10 %.**
+- **Avance integral R0–R8: 62 %.**
+- **Madurez funcional alpha: aproximadamente 87 %.**
+- **Preparación industrial/metrológica: aproximadamente 11 %.**
 
 | Fase | Peso | Avance | Contribución |
 |---|---:|---:|---:|
@@ -31,74 +29,74 @@
 | R1 — Modelo dimensional | 12 % | 85 % | 10,20 % |
 | R2 — Familias históricas | 10 % | 50 % | 5,00 % |
 | R3 — Identificación | 12 % | 85 % | 10,20 % |
-| R4 — Fotogrametría robusta | 20 % | 72 % | 14,40 % |
+| R4 — Fotogrametría robusta | 20 % | 86 % | 17,20 % |
 | R5 — Optimización y calibración | 15 % | 45 % | 6,75 % |
-| R6 — Robustez Android/dispositivos | 10 % | 18 % | 1,80 % |
+| R6 — Robustez Android/dispositivos | 10 % | 20 % | 2,00 % |
 | R7 — STEP/ensamblaje | 8 % | 45 % | 3,60 % |
 | R8 — Calificación de ingeniería | 5 % | 0 % | 0,00 % |
-| **Total** | **100 %** |  | **58,67 % → 59 %** |
+| **Total** | **100 %** |  | **61,67 % → 62 %** |
 
 ## Iteración actual o última cerrada
 
-### ITER-007 — Orquestación runtime de safety gate, BA y fallback
+### ITER-008 — Productores automáticos de degeneración visual
 
 Registro:
 
-`history/ITER-007_2026-07-21_runtime-safety-ba-fallback.md`
+`history/ITER-008_2026-07-21_visual-degeneracy-producers.md`
 
 Resultado:
 
-- política runtime fail-closed implementada;
-- BA aceptado solo con gate `READY` y reducción válida del error;
-- fallback sin optimizar claramente diferenciado;
-- auditoría SQLite append-only;
-- gate v50 aprobado;
-- GitHub Actions producto run `#479` en `success`;
-- `0.18.0-alpha25` compilada y publicada.
+- RANSAC determinista de homografía;
+- competencia homografía/fundamental;
+- agregación de desenfoque, reflejos y repetición;
+- brechas explícitas ante muestras insuficientes;
+- gate v51 aprobado;
+- GitHub Actions producto run `#500` en `success`;
+- `0.18.0-alpha26` compilada y publicada.
 
 ## Bloqueos activos
 
 1. `DATA-001`: interfaz dimensional heredada pendiente.
 2. `DATA-007`: SHA-256 reales de PDF pendientes.
-3. `RECON-003`: homografía no calculada automáticamente.
-4. `VISION-001`: reflejos no medidos automáticamente.
-5. `VISION-002`: ambigüedad repetitiva no agregada por sesión.
-6. `BA-001`: rotaciones no optimizadas.
+3. `RECON-004`: productores visuales no conectados al analizador runtime.
+4. `VISION-003`: highlights no extraídos todavía desde bitmap runtime.
+5. `VISION-004`: umbrales sin banco real de superficies metálicas.
+6. `BA-001`: rotaciones no optimizadas por BA local.
 7. `BA-002`: coordinador no invocado por `CaptureActivity`.
 8. `BA-004`: observaciones BA no expuestas por el reporte.
 9. `CAL-001`: no existen perfiles físicos Samsung A15/Honor X5C.
-10. `UI-001`: safety gate no gobierna todavía los botones visuales.
-11. `VALID-001`: no existe campaña física ni metrológica.
-12. `ABI-001`: OCCT disponible solo para `arm64-v8a`.
+10. `VALID-001`: no existe campaña física ni metrológica.
+11. `ABI-001`: OCCT disponible solo para `arm64-v8a`.
 
 ## Siguiente iteración obligatoria
 
-### ITER-008 — Productores automáticos de degeneración visual
+### ITER-009 — Refinamiento robusto del grafo global de poses
 
 Prioridad:
 
-1. implementar competencia homografía/fundamental;
-2. detectar dominancia planar sin confundir falta de datos con aprobación;
-3. agregar ambigüedad repetitiva por par y por sesión;
-4. agregar métricas conservadoras de reflejos y desenfoque;
-5. producir `SupplementalMetrics` para el safety gate;
-6. probar escenas volumétricas, planas, repetitivas y reflectantes;
-7. publicar `0.18.0-alpha26`.
+1. crear refinamiento acotado del pose graph;
+2. fijar el nodo 0 como gauge;
+3. preservar escala mediante priors;
+4. usar pérdida robusta y rechazar aristas incompatibles;
+5. medir residuos antes/después;
+6. bloquear divergencia y conservar poses iniciales;
+7. publicar `0.18.0-alpha27`.
 
 ## Criterios de entrada
 
-- conservar los 24 gates previos;
-- mantener política fail-closed;
-- no rellenar métricas desconocidas con valores favorables;
-- respetar límites de memoria Android;
+- conservar los 25 gates previos;
+- limitar nodos, aristas e iteraciones;
+- no denominar BA global a este refinamiento;
+- mantener fallback a poses iniciales;
 - no declarar validación física.
 
 ## Criterios de salida
 
-- productor homografía/fundamental probado;
-- agregador de degradación visual probado;
-- métricas suplementarias trazables;
-- alpha26 compilada;
+- optimizador de pose graph probado;
+- gauge fijo;
+- reducción de residuos de ciclo;
+- outliers rechazados;
+- alpha27 compilada;
 - CI producto e historial exitosos;
-- ITER-008 archivada;
-- este archivo actualizado con ITER-009.
+- ITER-009 archivada;
+- este archivo actualizado con ITER-010.
