@@ -3,25 +3,24 @@
 **Actualizado:** 2026-07-21  
 **Rama:** `agent/photogrammetry-validation-alpha20`  
 **PR activo:** `#8` — borrador  
-**Versión Android:** `0.18.0-alpha26`
+**Versión Android:** `0.18.0-alpha27`
 
 ## Estado acumulado
 
 - La aplicación compila para `arm64-v8a` e incluye STEP/OCCT.
-- La evidencia dimensional y la identificación por OT/plano/revisión permanecen auditables.
-- Existe safety gate fotogramétrico fail-closed y BA local acotado.
-- La política runtime distingue geometría optimizada, fallback revisable y bloqueo.
-- Existe RANSAC de homografía y competencia contra soporte fundamental.
-- Existen productores agregados de desenfoque, reflejos/saturación y ambigüedad repetitiva.
-- Las métricas faltantes permanecen como `NaN` y brechas de evidencia.
-- Los productores de ITER-008 todavía no se invocan automáticamente dentro de `SessionOverlapAnalyzer`.
+- La base dimensional, identificación multivariable y auditoría permanecen activas.
+- Existe safety gate, BA local, política runtime y productores de degeneración visual.
+- Existe refinamiento robusto del pose graph limitado a traslaciones.
+- El nodo 0 permanece fijo y los priors conservan la escala local.
+- Problemas desconectados, sobredimensionados o divergentes se bloquean o revierten.
+- La integración automática de los nuevos productores, coordinador y refinador en el pipeline real sigue pendiente.
 - No existe calibración física ni validación metrológica.
 
 ## Avance global estimado
 
-- **Avance integral R0–R8: 62 %.**
-- **Madurez funcional alpha: aproximadamente 87 %.**
-- **Preparación industrial/metrológica: aproximadamente 11 %.**
+- **Avance integral R0–R8: 66 %.**
+- **Madurez funcional alpha: aproximadamente 89 %.**
+- **Preparación industrial/metrológica: aproximadamente 12 %.**
 
 | Fase | Peso | Avance | Contribución |
 |---|---:|---:|---:|
@@ -30,73 +29,72 @@
 | R2 — Familias históricas | 10 % | 50 % | 5,00 % |
 | R3 — Identificación | 12 % | 85 % | 10,20 % |
 | R4 — Fotogrametría robusta | 20 % | 86 % | 17,20 % |
-| R5 — Optimización y calibración | 15 % | 45 % | 6,75 % |
-| R6 — Robustez Android/dispositivos | 10 % | 20 % | 2,00 % |
+| R5 — Optimización y calibración | 15 % | 70 % | 10,50 % |
+| R6 — Robustez Android/dispositivos | 10 % | 22 % | 2,20 % |
 | R7 — STEP/ensamblaje | 8 % | 45 % | 3,60 % |
 | R8 — Calificación de ingeniería | 5 % | 0 % | 0,00 % |
-| **Total** | **100 %** |  | **61,67 % → 62 %** |
+| **Total** | **100 %** |  | **65,62 % → 66 %** |
 
 ## Iteración actual o última cerrada
 
-### ITER-008 — Productores automáticos de degeneración visual
+### ITER-009 — Refinamiento robusto y acotado del grafo de poses
 
 Registro:
 
-`history/ITER-008_2026-07-21_visual-degeneracy-producers.md`
+`history/ITER-009_2026-07-21_bounded-pose-graph-refinement.md`
 
 Resultado:
 
-- RANSAC determinista de homografía;
-- competencia homografía/fundamental;
-- agregación de desenfoque, reflejos y repetición;
-- brechas explícitas ante muestras insuficientes;
-- gate v51 aprobado;
-- GitHub Actions producto run `#500` en `success`;
-- `0.18.0-alpha26` compilada y publicada.
+- optimización limitada a 48 nodos y 240 aristas;
+- nodo 0 fijo;
+- pérdida Huber y priors de posición;
+- reducción de residuos y rechazo de outlier;
+- fallback ante divergencia;
+- gate v52 aprobado;
+- GitHub Actions producto run `#512` en `success`;
+- `0.18.0-alpha27` compilada y publicada.
 
 ## Bloqueos activos
 
 1. `DATA-001`: interfaz dimensional heredada pendiente.
 2. `DATA-007`: SHA-256 reales de PDF pendientes.
 3. `RECON-004`: productores visuales no conectados al analizador runtime.
-4. `VISION-003`: highlights no extraídos todavía desde bitmap runtime.
-5. `VISION-004`: umbrales sin banco real de superficies metálicas.
-6. `BA-001`: rotaciones no optimizadas por BA local.
-7. `BA-002`: coordinador no invocado por `CaptureActivity`.
-8. `BA-004`: observaciones BA no expuestas por el reporte.
-9. `CAL-001`: no existen perfiles físicos Samsung A15/Honor X5C.
-10. `VALID-001`: no existe campaña física ni metrológica.
-11. `ABI-001`: OCCT disponible solo para `arm64-v8a`.
+4. `PG-001`: rotaciones no optimizadas.
+5. `PG-002`: refinador no conectado al pose graph runtime.
+6. `BA-002`: coordinador no invocado por `CaptureActivity`.
+7. `BA-004`: observaciones BA no expuestas por el reporte.
+8. `CAL-001`: no existen perfiles físicos Samsung A15/Honor X5C.
+9. `VALID-001`: no existe campaña física ni metrológica.
+10. `ABI-001`: OCCT disponible solo para `arm64-v8a`.
 
 ## Siguiente iteración obligatoria
 
-### ITER-009 — Refinamiento robusto del grafo global de poses
+### ITER-010 — Puerta profesional de calificación y campañas
 
 Prioridad:
 
-1. crear refinamiento acotado del pose graph;
-2. fijar el nodo 0 como gauge;
-3. preservar escala mediante priors;
-4. usar pérdida robusta y rechazar aristas incompatibles;
-5. medir residuos antes/después;
-6. bloquear divergencia y conservar poses iniciales;
-7. publicar `0.18.0-alpha27`.
+1. modelar campañas de dispositivo con evidencia por ejecución;
+2. modelar corpus STEP de taller y tasa de importación;
+3. modelar repetibilidad y metrología trazable;
+4. separar `ALPHA_READY`, `FIELD_PILOT_REVIEW` e `INDUSTRIAL_BLOCKED`;
+5. producir huella determinista del manifiesto de evidencia;
+6. bloquear uso industrial sin campañas físicas;
+7. publicar `0.18.0-alpha28`.
 
 ## Criterios de entrada
 
-- conservar los 25 gates previos;
-- limitar nodos, aristas e iteraciones;
-- no denominar BA global a este refinamiento;
-- mantener fallback a poses iniciales;
-- no declarar validación física.
+- conservar los 26 gates previos;
+- no inventar resultados de Samsung A15 u Honor X5C;
+- considerar evidencia no ejecutada como bloqueo;
+- mantener PR en borrador;
+- no declarar autorización metrológica.
 
 ## Criterios de salida
 
-- optimizador de pose graph probado;
-- gauge fijo;
-- reducción de residuos de ciclo;
-- outliers rechazados;
-- alpha27 compilada;
+- puerta profesional implementada y probada;
+- campañas faltantes bloquean calificación industrial;
+- manifiesto auditable y reproducible;
+- alpha28 compilada;
 - CI producto e historial exitosos;
-- ITER-009 archivada;
-- este archivo actualizado con ITER-010.
+- ITER-010 archivada;
+- este archivo actualizado con ITER-011.
