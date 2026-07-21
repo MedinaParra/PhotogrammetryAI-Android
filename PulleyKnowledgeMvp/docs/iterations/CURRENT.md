@@ -10,7 +10,6 @@
 - Alpha28 compila para `arm64-v8a` con STEP/OCCT.
 - Evidencia dimensional, identificación, safety gate, BA local, productores visuales y pose graph tienen gates sintéticos.
 - La puerta profesional separa alpha, piloto e industria.
-- Campañas no ejecutadas permanecen bloqueadas.
 - No existe calificación metrológica industrial.
 
 ## Avance global estimado
