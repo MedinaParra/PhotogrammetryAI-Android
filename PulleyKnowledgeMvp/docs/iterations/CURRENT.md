@@ -7,71 +7,56 @@
 
 ## Estado acumulado
 
-- La aplicación compila para `arm64-v8a` e incluye STEP/OCCT.
-- La base dimensional, identificación, safety gate, BA local y auditoría permanecen probados.
-- Existen productores de degeneración visual y refinamiento acotado del pose graph.
-- Existe una puerta profesional de campañas de dispositivo, corpus STEP y metrología.
-- El estado alpha, piloto e industrial se separa explícitamente.
-- Las campañas no ejecutadas no se convierten en aprobación.
-- El manifiesto de evidencia tiene huella SHA-256 determinista.
-- La integración runtime completa y las campañas físicas todavía están pendientes.
-- El producto no está calificado para metrología industrial.
+- Alpha28 compila para `arm64-v8a` con STEP/OCCT.
+- Evidencia dimensional, identificación, safety gate, BA local, productores visuales y refinamiento del pose graph están cubiertos por pruebas sintéticas.
+- Existe una puerta profesional para separar alpha, piloto e industria.
+- Campañas no ejecutadas permanecen como bloqueo.
+- No existe calificación metrológica industrial.
 
 ## Avance global estimado
 
 - **Avance integral R0–R8: 70 %.**
-- **Madurez funcional alpha: aproximadamente 91 %.**
-- **Preparación industrial/metrológica: aproximadamente 15 %.**
+- **Madurez funcional alpha: 91 %.**
+- **Preparación industrial/metrológica: 15 %.**
 
 ## Iteración actual o última cerrada
 
 ### ITER-010 — Puerta profesional de calificación y campañas
 
-Registro:
+Registro: `history/ITER-010_2026-07-21_engineering-qualification-gate.md`
 
-`history/ITER-010_2026-07-21_engineering-qualification-gate.md`
-
-Resultado:
-
-- campañas de dispositivo modeladas de forma fail-closed;
-- separación alpha, piloto e industrial;
-- metrología trazable obligatoria;
-- manifiesto SHA-256 reproducible;
 - 27 gates Java aprobados;
-- GitHub Actions producto run `#530` en `success`;
-- historial run `#104` en `success`;
-- `0.18.0-alpha28` compilada y publicada.
+- producto run `#530`: `success`;
+- historial run `#104`: `success`;
+- APK alpha28 publicada;
+- calificación industrial bloqueada por evidencia física pendiente.
 
 ## Bloqueos activos
 
-1. `RECON-004`: productores visuales no conectados al analizador runtime.
-2. `PG-002`: refinador no conectado al pose graph runtime.
-3. `BA-002`: coordinador no invocado por `CaptureActivity`.
-4. `BA-004`: observaciones BA no expuestas por el reporte.
-5. `DEV-001`: campaña Samsung A15 no ejecutada.
-6. `DEV-002`: campaña Honor X5C no ejecutada.
-7. `MET-001`: no existe banco metrológico trazable.
-8. `STEP-001`: corpus STEP real insuficiente.
-9. `APP-001`: aprobación formal de ingeniería inexistente.
-10. `ABI-001`: OCCT disponible solo para `arm64-v8a`.
+1. integración runtime completa pendiente;
+2. Samsung A15 no ensayado;
+3. Honor X5C no ensayado;
+4. metrología trazable ausente;
+5. corpus STEP real insuficiente;
+6. OCCT solo `arm64-v8a`.
 
 ## Siguiente iteración obligatoria
 
 ### ITER-011 — Integración runtime completa y campaña física inicial
 
-Conectar los productores y refinadores al pipeline real, instrumentar duración, memoria, temperatura y JNI, ejecutar la primera campaña Samsung A15/Honor X5C e iniciar el corpus STEP real.
+Conectar los componentes al pipeline, instrumentar recursos y ejecutar campañas reales sin alterar la puerta industrial.
 
 ## Criterios de entrada
 
-- conservar los 27 gates previos;
-- usar hashes reales de APK;
-- no reutilizar pruebas sintéticas como evidencia física;
-- mantener calificación industrial bloqueada.
+- conservar 27 gates;
+- usar hashes reales;
+- no usar sintéticos como evidencia física;
+- PR en borrador.
 
 ## Criterios de salida
 
-- integración runtime completa o bloqueos documentados;
-- campaña inicial en ambos dispositivos o fallos explícitos;
-- métricas térmicas, memoria, tiempo y JNI;
-- corpus STEP real iniciado;
+- integración runtime o bloqueos documentados;
+- campañas en ambos teléfonos o fallos explícitos;
+- métricas térmicas/memoria/JNI;
+- corpus STEP iniciado;
 - CI e historial exitosos.
