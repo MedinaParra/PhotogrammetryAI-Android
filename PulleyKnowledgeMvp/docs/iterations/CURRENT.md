@@ -8,15 +8,15 @@
 ## Estado acumulado
 
 - Alpha28 compila para `arm64-v8a` con STEP/OCCT.
-- Evidencia dimensional, identificación, safety gate, BA local, productores visuales y refinamiento del pose graph están cubiertos por pruebas sintéticas.
-- Existe una puerta profesional para separar alpha, piloto e industria.
-- Campañas no ejecutadas permanecen como bloqueo.
+- Evidencia dimensional, identificación, safety gate, BA local, productores visuales y pose graph tienen gates sintéticos.
+- La puerta profesional separa alpha, piloto e industria.
+- Campañas no ejecutadas permanecen bloqueadas.
 - No existe calificación metrológica industrial.
 
 ## Avance global estimado
 
-- **Avance integral R0–R8: 70 %.**
-- **Madurez funcional alpha: 91 %.**
+- **Avance integral: 70 %.**
+- **Madurez alpha: 91 %.**
 - **Preparación industrial/metrológica: 15 %.**
 
 ## Iteración actual o última cerrada
@@ -25,38 +25,37 @@
 
 Registro: `history/ITER-010_2026-07-21_engineering-qualification-gate.md`
 
-- 27 gates Java aprobados;
+- 27 gates Java;
 - producto run `#530`: `success`;
 - historial run `#104`: `success`;
 - APK alpha28 publicada;
-- calificación industrial bloqueada por evidencia física pendiente.
+- uso industrial bloqueado.
 
 ## Bloqueos activos
 
-1. integración runtime completa pendiente;
-2. Samsung A15 no ensayado;
-3. Honor X5C no ensayado;
-4. metrología trazable ausente;
-5. corpus STEP real insuficiente;
-6. OCCT solo `arm64-v8a`.
+1. integración runtime pendiente;
+2. campañas Samsung A15/Honor X5C no ejecutadas;
+3. metrología trazable ausente;
+4. corpus STEP real insuficiente;
+5. OCCT solo `arm64-v8a`.
 
 ## Siguiente iteración obligatoria
 
 ### ITER-011 — Integración runtime completa y campaña física inicial
 
-Conectar los componentes al pipeline, instrumentar recursos y ejecutar campañas reales sin alterar la puerta industrial.
+Conectar el pipeline e iniciar campañas físicas con evidencia real.
 
 ## Criterios de entrada
 
 - conservar 27 gates;
-- usar hashes reales;
+- hashes reales;
 - no usar sintéticos como evidencia física;
 - PR en borrador.
 
 ## Criterios de salida
 
-- integración runtime o bloqueos documentados;
-- campañas en ambos teléfonos o fallos explícitos;
-- métricas térmicas/memoria/JNI;
+- integración o bloqueos documentados;
+- campañas reales o fallos explícitos;
+- métricas de recursos/JNI;
 - corpus STEP iniciado;
 - CI e historial exitosos.
