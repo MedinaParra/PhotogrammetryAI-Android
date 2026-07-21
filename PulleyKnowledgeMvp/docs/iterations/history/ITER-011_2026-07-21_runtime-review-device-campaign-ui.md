@@ -6,6 +6,7 @@
 - **Rama:** `agent/photogrammetry-validation-alpha20`
 - **PR:** `#8` (borrador)
 - **Versión:** `0.18.0-alpha29`
+- **Commit funcional de cierre:** `57738959da69a8a6b79ccbff92b73d9113d3df0e`
 - **Fases:** R4, R5, R6 y R8
 
 ## Objetivo
@@ -51,7 +52,9 @@ La campaña inicial exige como mínimo una duración, medición de temperatura y
 | campaña REVIEW | JDK | PASS | métricas marginales producen advertencias |
 | campaña BLOCKED | JDK | PASS | hash, temperatura, memoria, JNI y recuperación bloquean |
 | JSON canónico | JDK | PASS | comillas escapadas y estado serializado |
-| pantallas Android | compilación | pendiente de CI | actividades registradas en manifest |
+| pantallas Android | GitHub Actions | PASS | compilación alpha29 y manifest válidos |
+| gate producto completo | GitHub Actions run `#557` | PASS | 28 gates, Gradle, APK, cierre OCCT |
+| historial | GitHub Actions run `#127` | PASS | registro y siguiente iteración válidos |
 | campaña Samsung A15 | hardware | NO EJECUTADA | no hay dispositivo conectado |
 | campaña Honor X5C | hardware | NO EJECUTADA | no hay dispositivo conectado |
 | metrología | instrumentos trazables | NO EJECUTADA | fuera de alcance |
@@ -59,9 +62,11 @@ La campaña inicial exige como mínimo una duración, medición de temperatura y
 ## Resultados
 
 - El operador puede ejecutar una revisión runtime desde la aplicación.
-- El producto ya muestra por qué una sesión usa fallback o queda bloqueada.
+- El producto muestra por qué una sesión usa fallback o queda bloqueada.
 - Existe un formulario estructurado para iniciar campañas físicas reales.
 - La evidencia se guarda localmente como JSON y no se mezcla con resultados sintéticos.
+- Alpha29 compila con STEP/OCCT para `arm64-v8a`.
+- Se publicó el artefacto `SKM-Polea-AI-CAD-STEP-v0.18.0-alpha29`.
 - No se declara que exista una campaña física completada.
 
 ## Fallos, riesgos y deuda
@@ -77,7 +82,7 @@ La campaña inicial exige como mínimo una duración, medición de temperatura y
 
 ## Estado del roadmap
 
-Avance integral propuesto después de CI: **74 %**. La madurez alpha propuesta es **93 %** y la preparación industrial/metrológica permanece en **16 %** porque no hubo hardware ni instrumentos trazables.
+Avance integral después de ITER-011: **74 %**. La madurez alpha es **93 %** y la preparación industrial/metrológica permanece en **16 %** porque no hubo hardware ni instrumentos trazables.
 
 ## Siguiente iteración obligatoria
 
