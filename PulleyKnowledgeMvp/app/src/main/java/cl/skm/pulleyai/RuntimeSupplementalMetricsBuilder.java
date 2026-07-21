@@ -1,46 +1,48 @@
 package cl.skm.pulleyai;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Color;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Recomputes bounded visual evidence from the exact frames used by the runtime report. */
+/** Builds bounded visual safety evidence from a shared runtime preparation cache. */
 public final class RuntimeSupplementalMetricsBuilder {
-    private static final int ANALYSIS_WIDTH = 640;
-    private static final int FEATURES_PER_FRAME = 420;
     private static final double MINIMUM_BLUR_SCORE = 105.0;
 
     private RuntimeSupplementalMetricsBuilder() {}
 
+    /** Compatibility entrypoint; runtime product flow should prepare and reuse one shared cache. */
     public static RuntimeSupplementalMetricsCore.Result build(CaptureStore store, String sessionId,
-                                                               SessionOverlapAnalyzer.Report report) {
-        if (store == null || sessionId == null || report == null) {
+                                                                SessionOverlapAnalyzer.Report report) {
+        RuntimeExecutionControlCore.Token control = RuntimeExecutionControlCore.start(10L * 60L * 1000L);
+        RuntimeFramePreparationCache.Result cache = RuntimeFramePreparationCache.prepare(
+                null, store, sessionId, report, control);
+        return build(cache, report, control);
+    }
+
+    public static RuntimeSupplementalMetricsCore.Result build(
+            RuntimeFramePreparationCache.Result cache,
+            SessionOverlapAnalyzer.Report report,
+            RuntimeExecutionControlCore.Token control) {
+        RuntimeExecutionControlCore.Token token = control == null
+                ? RuntimeExecutionControlCore.start(10L * 60L * 1000L) : control;
+        if (cache == null || !cache.ready || report == null) {
             return RuntimeSupplementalMetricsCore.evaluate(
                     Collections.<RuntimeSupplementalMetricsCore.FrameSample>emptyList(),
                     Collections.<RuntimeSupplementalMetricsCore.PairSample>emptyList());
         }
-        List<CaptureStore.Frame> selected = selectFrames(store.frames(sessionId));
-        List<CachedFrame> frames = new ArrayList<CachedFrame>();
+        token.checkpoint("SUPPLEMENTAL_FRAMES");
         List<RuntimeSupplementalMetricsCore.FrameSample> frameSamples =
                 new ArrayList<RuntimeSupplementalMetricsCore.FrameSample>();
-        for (CaptureStore.Frame source : selected) {
-            Decoded decoded = decode(source.filePath);
-            VisualFeatureCore.FeatureSet features = VisualFeatureCore.detect(
-                    decoded.gray, decoded.width, decoded.height, FEATURES_PER_FRAME);
-            frames.add(new CachedFrame(source, features));
+        for (RuntimeFramePreparationCache.Entry entry : cache.entries) {
+            token.checkpoint("SUPPLEMENTAL_FRAME_" + entry.frameIndex);
             frameSamples.add(new RuntimeSupplementalMetricsCore.FrameSample(
-                    source.blur, MINIMUM_BLUR_SCORE,
-                    decoded.highlightFraction, decoded.clippedChannelFraction));
+                    entry.source.blur, MINIMUM_BLUR_SCORE,
+                    entry.highlightFraction, entry.clippedChannelFraction));
         }
 
         Map<Long,SessionOverlapAnalyzer.Pair> reportPairs =
@@ -50,9 +52,11 @@ public final class RuntimeSupplementalMetricsBuilder {
         }
         List<RuntimeSupplementalMetricsCore.PairSample> pairSamples =
                 new ArrayList<RuntimeSupplementalMetricsCore.PairSample>();
-        for (int left = 0; left < frames.size(); left++) {
-            for (int right = left + 1; right < frames.size(); right++) {
-                CachedFrame a = frames.get(left), b = frames.get(right);
+        for (int left = 0; left < cache.entries.size(); left++) {
+            for (int right = left + 1; right < cache.entries.size(); right++) {
+                token.checkpoint("SUPPLEMENTAL_PAIR_" + left + "_" + right);
+                RuntimeFramePreparationCache.Entry a = cache.entries.get(left);
+                RuntimeFramePreparationCache.Entry b = cache.entries.get(right);
                 if (!candidate(a.source, b.source)) continue;
                 SessionOverlapAnalyzer.Pair reportPair = reportPairs.get(
                         pairKey(a.source.sequence, b.source.sequence));
@@ -74,6 +78,7 @@ public final class RuntimeSupplementalMetricsBuilder {
                         matches.spatialCoverage));
             }
         }
+        token.checkpoint("SUPPLEMENTAL_READY");
         return RuntimeSupplementalMetricsCore.evaluate(frameSamples, pairSamples);
     }
 
@@ -119,70 +124,10 @@ public final class RuntimeSupplementalMetricsBuilder {
         return values.get(low) * (1.0 - fraction) + values.get(high) * fraction;
     }
 
-    private static List<CaptureStore.Frame> selectFrames(List<CaptureStore.Frame> all) {
-        Map<Integer,CaptureStore.Frame> bySequence = new HashMap<Integer,CaptureStore.Frame>();
-        List<ReconstructionFrameSelectorCore.Candidate> candidates =
-                new ArrayList<ReconstructionFrameSelectorCore.Candidate>();
-        for (CaptureStore.Frame frame : all) {
-            if (!"ACCEPTED".equals(frame.quality) || !new File(frame.filePath).isFile()) continue;
-            bySequence.put(frame.sequence, frame);
-            candidates.add(new ReconstructionFrameSelectorCore.Candidate(
-                    frame.sequence, frame.band, frame.sector, frame.blur,
-                    frame.luma, frame.motion, frame.createdAt, true));
-        }
-        ReconstructionFrameSelectorCore.Result selection =
-                ReconstructionFrameSelectorCore.select(candidates, 2, 48);
-        List<CaptureStore.Frame> selected = new ArrayList<CaptureStore.Frame>();
-        for (ReconstructionFrameSelectorCore.Candidate candidate : selection.selected) {
-            CaptureStore.Frame frame = bySequence.get(candidate.id);
-            if (frame != null) selected.add(frame);
-        }
-        Collections.sort(selected, new Comparator<CaptureStore.Frame>() {
-            @Override public int compare(CaptureStore.Frame a, CaptureStore.Frame b) {
-                return Integer.compare(a.sequence, b.sequence);
-            }
-        });
-        return selected;
-    }
-
     private static boolean candidate(CaptureStore.Frame left, CaptureStore.Frame right) {
         int gap = Math.abs(left.sector - right.sector);
         gap = Math.min(gap, CoveragePlanner.SECTOR_COUNT - gap);
         return left.band.equals(right.band) ? gap >= 1 && gap <= 2 : gap <= 1;
-    }
-
-    private static Decoded decode(String path) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(path, bounds);
-        int sample = 1;
-        while (Math.max(bounds.outWidth, bounds.outHeight) / sample > ANALYSIS_WIDTH) sample *= 2;
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inSampleSize = Math.max(1, sample);
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        Bitmap bitmap = BitmapFactory.decodeFile(path, options);
-        if (bitmap == null) throw new IllegalStateException("IMAGE_DECODE_FAILED");
-        try {
-            int width = bitmap.getWidth(), height = bitmap.getHeight();
-            byte[] gray = new byte[width * height];
-            int[] row = new int[width];
-            long highlights = 0, clipped = 0, count = 0;
-            for (int y = 0; y < height; y++) {
-                bitmap.getPixels(row, 0, width, 0, y, width, 1);
-                for (int x = 0; x < width; x++) {
-                    int color = row[x];
-                    int r = Color.red(color), g = Color.green(color), b = Color.blue(color);
-                    double luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-                    gray[y * width + x] = (byte) Math.round(luma);
-                    if (luma > 246.0) highlights++;
-                    if (r >= 252 || g >= 252 || b >= 252) clipped++;
-                    count++;
-                }
-            }
-            return new Decoded(width, height, gray,
-                    count == 0 ? 0.0 : highlights / (double) count,
-                    count == 0 ? 0.0 : clipped / (double) count);
-        } finally { bitmap.recycle(); }
     }
 
     private static long pairKey(int first, int second) {
@@ -190,26 +135,11 @@ public final class RuntimeSupplementalMetricsBuilder {
         return ((long) low << 32) ^ (high & 0xffffffffL);
     }
 
-    private static final class CachedFrame {
-        final CaptureStore.Frame source; final VisualFeatureCore.FeatureSet features;
-        CachedFrame(CaptureStore.Frame source, VisualFeatureCore.FeatureSet features) {
-            this.source = source; this.features = features;
-        }
-    }
-    private static final class Decoded {
-        final int width, height; final byte[] gray;
-        final double highlightFraction, clippedChannelFraction;
-        Decoded(int width, int height, byte[] gray,
-                double highlightFraction, double clippedChannelFraction) {
-            this.width = width; this.height = height; this.gray = gray;
-            this.highlightFraction = highlightFraction;
-            this.clippedChannelFraction = clippedChannelFraction;
-        }
-    }
     private static final class Ambiguity {
         final double p75SecondBestRatio, mutualFraction;
         Ambiguity(double p75SecondBestRatio, double mutualFraction) {
-            this.p75SecondBestRatio = p75SecondBestRatio; this.mutualFraction = mutualFraction;
+            this.p75SecondBestRatio = p75SecondBestRatio;
+            this.mutualFraction = mutualFraction;
         }
     }
 }
