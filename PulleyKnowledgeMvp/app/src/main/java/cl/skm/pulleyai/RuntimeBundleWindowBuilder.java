@@ -1,55 +1,55 @@
 package cl.skm.pulleyai;
 
 import android.content.Context;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Color;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Recreates deterministic feature coordinates and builds the BA window from a real session report. */
+/** Builds the bounded BA window from the shared runtime frame preparation cache. */
 public final class RuntimeBundleWindowBuilder {
-    private static final int ANALYSIS_WIDTH = 640;
-    private static final int FEATURES_PER_FRAME = 420;
-
     private RuntimeBundleWindowBuilder() {}
 
+    /** Compatibility entrypoint; product runtime should prepare and reuse one cache. */
     public static RuntimeBundleWindowCore.Result build(Context context, CaptureStore store,
                                                         String sessionId,
                                                         SessionOverlapAnalyzer.Report report) {
-        if (context == null || store == null || sessionId == null || report == null) {
-            return RuntimeBundleWindowCore.Result.failed("RUNTIME_INPUT_MISSING");
+        RuntimeExecutionControlCore.Token control = RuntimeExecutionControlCore.start(10L * 60L * 1000L);
+        RuntimeFramePreparationCache.Result cache = RuntimeFramePreparationCache.prepare(
+                context, store, sessionId, report, control);
+        return build(cache, report, control);
+    }
+
+    public static RuntimeBundleWindowCore.Result build(
+            RuntimeFramePreparationCache.Result cache,
+            SessionOverlapAnalyzer.Report report,
+            RuntimeExecutionControlCore.Token control) {
+        RuntimeExecutionControlCore.Token token = control == null
+                ? RuntimeExecutionControlCore.start(10L * 60L * 1000L) : control;
+        if (cache == null || !cache.ready || report == null) {
+            return RuntimeBundleWindowCore.Result.failed(cache == null
+                    ? "RUNTIME_CACHE_MISSING" : cache.status);
         }
         if (!report.globalPoseGraph.ready() || !report.tracks.ready() || !report.globalCloud.ready()) {
             return RuntimeBundleWindowCore.Result.failed("GLOBAL_RECONSTRUCTION_NOT_READY");
         }
+        if (cache.entries.size() != report.globalPoseGraph.totalNodes
+                || report.globalPoseGraph.poses.size() != cache.entries.size()) {
+            return RuntimeBundleWindowCore.Result.failed("FRAME_POSE_COUNT_MISMATCH");
+        }
         try {
-            List<CaptureStore.Frame> selected = selectFrames(store.frames(sessionId));
-            if (selected.size() != report.globalPoseGraph.totalNodes
-                    || report.globalPoseGraph.poses.size() != selected.size()) {
-                return RuntimeBundleWindowCore.Result.failed("FRAME_POSE_COUNT_MISMATCH");
-            }
-            CameraIntrinsicsProvider provider = new CameraIntrinsicsProvider(context);
-            List<CachedFrame> cached = new ArrayList<CachedFrame>();
+            token.checkpoint("WINDOW_FRAMES");
             List<RuntimeBundleWindowCore.FrameSnapshot> frames =
                     new ArrayList<RuntimeBundleWindowCore.FrameSnapshot>();
-            for (int index = 0; index < selected.size(); index++) {
-                CaptureStore.Frame frame = selected.get(index);
-                Gray gray = decode(frame.filePath);
-                VisualFeatureCore.FeatureSet features = VisualFeatureCore.detect(
-                        gray.pixels, gray.width, gray.height, FEATURES_PER_FRAME);
-                CameraIntrinsicsProvider.Resolution resolution = provider.resolve(
-                        frame, gray.width, gray.height);
-                cached.add(new CachedFrame(features, resolution));
+            for (int index = 0; index < cache.entries.size(); index++) {
+                token.checkpoint("WINDOW_FRAME_" + index);
+                RuntimeFramePreparationCache.Entry entry = cache.entries.get(index);
                 GlobalPoseGraphCore.Pose pose = report.globalPoseGraph.poses.get(index);
+                CameraIntrinsicsProvider.Resolution resolution = entry.intrinsics;
                 if (pose != null && resolution.available && resolution.intrinsics != null) {
                     EssentialPoseCore.Intrinsics k = resolution.intrinsics;
                     frames.add(new RuntimeBundleWindowCore.FrameSnapshot(index,
@@ -71,18 +71,18 @@ public final class RuntimeBundleWindowBuilder {
             List<RuntimeBundleWindowCore.TrackSnapshot> tracks =
                     new ArrayList<RuntimeBundleWindowCore.TrackSnapshot>();
             for (MultiViewTrackCore.Track track : report.tracks.tracks) {
+                token.checkpoint("WINDOW_TRACK_" + track.id);
                 GlobalSparseCloudCore.FusedPoint point = pointByTrack.get(track.id);
                 if (point == null) continue;
                 double weight = weight(point, track.support);
                 List<RuntimeBundleWindowCore.ObservationSnapshot> observations =
                         new ArrayList<RuntimeBundleWindowCore.ObservationSnapshot>();
                 for (MultiViewTrackCore.Observation observation : track.observations) {
-                    if (observation.frameIndex < 0 || observation.frameIndex >= cached.size()) continue;
-                    CachedFrame frame = cached.get(observation.frameIndex);
-                    if (!frame.intrinsics.available || observation.featureIndex < 0
-                            || observation.featureIndex >= frame.features.features.size()) continue;
-                    VisualFeatureCore.Feature feature =
-                            frame.features.features.get(observation.featureIndex);
+                    if (observation.frameIndex < 0 || observation.frameIndex >= cache.entries.size()) continue;
+                    RuntimeFramePreparationCache.Entry entry = cache.entries.get(observation.frameIndex);
+                    if (!entry.intrinsics.available || observation.featureIndex < 0
+                            || observation.featureIndex >= entry.features.features.size()) continue;
+                    VisualFeatureCore.Feature feature = entry.features.features.get(observation.featureIndex);
                     observations.add(new RuntimeBundleWindowCore.ObservationSnapshot(
                             observation.frameIndex, observation.featureIndex,
                             feature.x, feature.y, weight));
@@ -92,10 +92,13 @@ public final class RuntimeBundleWindowBuilder {
                             track.id, track.support, observations));
                 }
             }
+            token.checkpoint("WINDOW_READY");
             return RuntimeBundleWindowCore.build(frames, tracks, points);
+        } catch (RuntimeExecutionControlCore.AbortedException aborted) {
+            throw aborted;
         } catch (Exception error) {
-            String name = error.getClass().getSimpleName();
-            return RuntimeBundleWindowCore.Result.failed("WINDOW_BUILD_" + name.toUpperCase());
+            return RuntimeBundleWindowCore.Result.failed(
+                    "WINDOW_BUILD_" + error.getClass().getSimpleName().toUpperCase());
         }
     }
 
@@ -108,81 +111,10 @@ public final class RuntimeBundleWindowBuilder {
         return target;
     }
 
-    private static List<CaptureStore.Frame> selectFrames(List<CaptureStore.Frame> all) {
-        Map<Integer,CaptureStore.Frame> bySequence = new HashMap<Integer,CaptureStore.Frame>();
-        List<ReconstructionFrameSelectorCore.Candidate> candidates =
-                new ArrayList<ReconstructionFrameSelectorCore.Candidate>();
-        for (CaptureStore.Frame frame : all) {
-            if (!"ACCEPTED".equals(frame.quality) || !new File(frame.filePath).isFile()) continue;
-            bySequence.put(frame.sequence, frame);
-            candidates.add(new ReconstructionFrameSelectorCore.Candidate(
-                    frame.sequence, frame.band, frame.sector, frame.blur,
-                    frame.luma, frame.motion, frame.createdAt, true));
-        }
-        ReconstructionFrameSelectorCore.Result selection =
-                ReconstructionFrameSelectorCore.select(candidates, 2, 48);
-        List<CaptureStore.Frame> selected = new ArrayList<CaptureStore.Frame>();
-        for (ReconstructionFrameSelectorCore.Candidate candidate : selection.selected) {
-            CaptureStore.Frame frame = bySequence.get(candidate.id);
-            if (frame != null) selected.add(frame);
-        }
-        Collections.sort(selected, new Comparator<CaptureStore.Frame>() {
-            @Override public int compare(CaptureStore.Frame a, CaptureStore.Frame b) {
-                return Integer.compare(a.sequence, b.sequence);
-            }
-        });
-        return selected;
-    }
-
-    private static Gray decode(String path) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(path, bounds);
-        int sample = 1;
-        while (Math.max(bounds.outWidth, bounds.outHeight) / sample > ANALYSIS_WIDTH) sample *= 2;
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inSampleSize = Math.max(1, sample);
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        Bitmap bitmap = BitmapFactory.decodeFile(path, options);
-        if (bitmap == null) throw new IllegalStateException("IMAGE_DECODE_FAILED");
-        try {
-            int width = bitmap.getWidth(), height = bitmap.getHeight();
-            byte[] gray = new byte[width * height];
-            int[] row = new int[width];
-            for (int y = 0; y < height; y++) {
-                bitmap.getPixels(row, 0, width, 0, y, width, 1);
-                for (int x = 0; x < width; x++) {
-                    int color = row[x];
-                    gray[y * width + x] = (byte) Math.round(0.2126 * Color.red(color)
-                            + 0.7152 * Color.green(color) + 0.0722 * Color.blue(color));
-                }
-            }
-            return new Gray(width, height, gray);
-        } finally {
-            bitmap.recycle();
-        }
-    }
-
     private static double weight(GlobalSparseCloudCore.FusedPoint point, double support) {
         double raw = Math.max(0.0, support)
                 / (1.0 + point.reprojectionRmsPx * point.reprojectionRmsPx
                 + 50.0 * point.spatialSpread * point.spatialSpread);
         return Math.max(0.05, Math.min(1.0, raw));
-    }
-
-    private static final class Gray {
-        final int width, height; final byte[] pixels;
-        Gray(int width, int height, byte[] pixels) {
-            this.width = width; this.height = height; this.pixels = pixels;
-        }
-    }
-
-    private static final class CachedFrame {
-        final VisualFeatureCore.FeatureSet features;
-        final CameraIntrinsicsProvider.Resolution intrinsics;
-        CachedFrame(VisualFeatureCore.FeatureSet features,
-                    CameraIntrinsicsProvider.Resolution intrinsics) {
-            this.features = features; this.intrinsics = intrinsics;
-        }
     }
 }
