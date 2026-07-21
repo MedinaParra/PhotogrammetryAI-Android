@@ -8,8 +8,6 @@ javac -d "$OUT" \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/HomographyModelCompetitionCore.java" \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/VisualDegradationAggregationCore.java" \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/PhotogrammetrySupplementalMetricsCore.java" \
-  "$ROOT/app/src/main/java/cl/skm/pulleyai/PhotogrammetrySupplementalMetricsAdapter.java" \
-  "$ROOT/app/src/main/java/cl/skm/pulleyai/PhotogrammetrySafetyGateAdapter.java" \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/PhotogrammetrySafetyGateCore.java" \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/RuntimeSupplementalMetricsCore.java" \
   "$ROOT/tools/RuntimeSupplementalMetricsV56Test.java"
