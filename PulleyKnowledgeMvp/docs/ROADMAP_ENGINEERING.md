@@ -4,6 +4,8 @@
 **Rama de trabajo:** `agent/photogrammetry-validation-alpha20`  
 **Base de producto:** `product/single-device-photogrammetry-v1`  
 **Última revisión:** 2026-07-21  
+**Última iteración cerrada:** `ITER-003`  
+**Siguiente iteración:** `ITER-004`  
 **Alcance:** aplicación Android offline, fotogrametría de poleas, base histórica código–OT–plano y comparación CAD/STEP.
 
 ## 1. Propósito del producto
@@ -23,20 +25,21 @@ La aplicación no se considerará apta para liberación metrológica hasta compl
 ## 2. Principios no negociables
 
 - **El plano aprobado gobierna.** Informes, WIP y nombres de archivo son evidencia secundaria.
-- **Una OT no sobrescribe a otra.** Las dimensiones deben versionarse por OT, número de plano y revisión.
-- **Código de material no implica identidad geométrica por sí solo.** También deben coincidir rol, cliente, superficie medida y cotas críticas.
+- **Una OT no sobrescribe a otra.** Las dimensiones se versionan por OT, plano y revisión.
+- **Código de material no implica identidad geométrica por sí solo.** También deben coincidir rol, superficie y cotas críticas.
 - **La superficie comparada debe declararse.** `BARE_SHELL` y `OUTER_LAGGING` no son intercambiables.
-- **No se inventan cotas faltantes.** La ausencia de evidencia produce `BLOCKED` o `REVIEW`, nunca una coincidencia automática.
+- **No se inventan cotas faltantes.** La ausencia de evidencia produce `BLOCKED` o `REVIEW`.
 - **Las pruebas sintéticas no equivalen a validación física.** Cada afirmación debe indicar su nivel de evidencia.
-- **Todo resultado debe ser reproducible.** Fotografías, hashes, parámetros, versión del algoritmo, plano y decisión humana deben quedar registrados.
+- **Todo resultado debe ser reproducible.** Fotografías, hashes, parámetros, versión, plano y decisión humana deben quedar registrados.
+- **Un identificador provisional no se presenta como SHA-256 real.** Los hashes deben calcularse sobre los bytes originales.
 
 ## 3. Regla dimensional de identificación
 
-La puerta primaria para poleas es el radio exterior observado:
+La puerta primaria para poleas es el radio observado de la superficie declarada:
 
 ```text
 radio_observado = radio de la superficie realmente visible
-radio_referencia = radio exterior aprobado para OT/plano/revisión
+radio_referencia = radio aprobado para OT/plano/revisión y superficie
 error_radio_mm = abs(radio_observado - radio_referencia)
 ```
 
@@ -44,11 +47,11 @@ Estados:
 
 - `MATCH`: `error_radio_mm <= 30` y no existen contradicciones críticas.
 - `REVIEW`: el radio cumple, pero existe ambigüedad de revisión, revestimiento, unidad, alias, OT o cota axial.
-- `BLOCKED`: `error_radio_mm > 30`, falta radio aprobado, se confundió radio con diámetro, o hay planos vigentes incompatibles.
+- `BLOCKED`: `error_radio_mm > 30`, falta radio aprobado, se confundió radio con diámetro o existen fuentes incompatibles.
 
-Una diferencia de 30 mm en radio equivale a 60 mm en diámetro, pero el motor debe almacenar y evaluar explícitamente el radio para evitar errores de interpretación.
+Una diferencia de 30 mm en radio equivale a 60 mm en diámetro, pero el motor almacena y evalúa explícitamente el radio.
 
-El radio es una condición necesaria, no suficiente. También se deben comprobar, cuando estén disponibles:
+El radio es una condición necesaria, no suficiente. También se deben comprobar cuando estén disponibles:
 
 - largo de manto o cara;
 - distancia entre centros de soportes;
@@ -69,20 +72,21 @@ MaterialFamily
 ├── WorkOrder[]
 │   ├── otNumber
 │   ├── componentDescription
-│   ├── purchaseOrder
 │   ├── Drawing[]
 │   │   ├── drawingNumber
-│   │   ├── revision
-│   │   ├── approvalState
-│   │   ├── sourceUri
-│   │   ├── sourceSha256
-│   │   └── DimensionEvidence[]
+│   │   ├── DrawingRevision[]
+│   │   │   ├── revision
+│   │   │   ├── approvalState
+│   │   │   ├── sourceUri
+│   │   │   ├── sourceSha256
+│   │   │   └── DimensionEvidence[]
 │   └── InterventionEvent[]
+├── IdentificationDecisionAudit[]
 ├── DerivedNominalEnvelope
 └── ValidationConflict[]
 ```
 
-Cada `DimensionEvidence` debe conservar:
+Cada `DimensionEvidence` conserva:
 
 - tipo de dimensión;
 - valor y unidad originales;
@@ -90,13 +94,13 @@ Cada `DimensionEvidence` debe conservar:
 - superficie de referencia;
 - tolerancia de plano;
 - OT, plano y revisión;
-- documento fuente y SHA-256;
+- documento fuente y estado del hash;
 - método de extracción;
 - confianza automática;
 - estado de revisión humana;
 - fecha y responsable de aprobación.
 
-La clave lógica mínima será:
+La clave lógica mínima implementada es:
 
 ```text
 material_code + ot_number + drawing_number + revision + dimension_kind + surface_kind
@@ -106,22 +110,26 @@ material_code + ot_number + drawing_number + revision + dimension_kind + surface
 
 ### Base técnica disponible
 
-- Captura Camera2, sesiones SQLite, IMU, calidad local, SHA-256 y ZIP.
+- Captura Camera2, sesiones SQLite, IMU, calidad local, SHA-256 de fotografías y ZIP.
 - Correspondencias visuales con ratio, simetría, cobertura y coherencia.
 - Fundamental, esencial, pose, triangulación, tracks y grafo de poses experimental.
 - Ajuste cilíndrico y escala conocida.
 - Importación STEP con OCCT/JNI para `arm64-v8a`.
-- Base histórica inicial con ocho códigos de material.
+- Base revisionada por código, OT, plano, revisión, dimensión y superficie.
+- Puerta de radio de 30 mm probada en 29/30/31 mm.
+- Conversión trazable de pulgadas a milímetros.
+- Conflictos explícitos que impiden coincidencias automáticas.
 
 ### Deuda crítica
 
+- La interfaz heredada todavía consulta parte del modelo plano.
+- Falta puntuación multivariable y auditoría persistente de decisiones.
 - No existe bundle adjustment local/global.
-- El descriptor visual es experimental y débil ante rotación, escala, reflejos y patrones repetitivos.
+- El descriptor visual sigue siendo experimental ante rotación, escala, reflejos y patrones repetitivos.
 - Camera2 no siempre solicita el JPEG nativo máximo.
 - Falta calibración de distorsión por dispositivo.
-- La base mezcla dimensiones de familia con dimensiones específicas de OT.
-- Varias familias carecen de radio exterior aprobado.
-- `4162045` presenta asociaciones documentales incompatibles y debe permanecer bloqueado.
+- Faltan SHA-256 reales de los PDF originales.
+- `4162045`, `4196111` y `10510386` permanecen bloqueados.
 - No existe campaña física completa en Samsung A15 y Honor X5C.
 - `armeabi-v7a` no está disponible en el cierre OCCT actual.
 
@@ -134,16 +142,20 @@ material_code + ot_number + drawing_number + revision + dimension_kind + surface
 Entregables:
 
 - jerarquía formal de fuentes;
-- estados `DRAFT`, `REVIEWED`, `APPROVED`, `REJECTED`;
-- SHA-256 por documento fuente;
+- estados `DRAFT`, `REVIEWED`, `APPROVED`, `REJECTED`, `SUPERSEDED`;
+- SHA-256 real por documento fuente;
 - política de revisiones y obsolescencia;
 - registro de conflictos sin borrar evidencia histórica;
-- catálogo de unidades y superficies.
+- catálogo de unidades y superficies;
+- auditoría reproducible por decisión.
 
 Puerta de salida:
 
-- 100 % de las cotas activas apuntan a un documento, OT, plano y revisión;
+- 100 % de cotas activas apuntan a documento, OT, plano y revisión;
+- ningún identificador provisional se presenta como hash verificado;
 - ninguna dimensión inferida se presenta como medición aprobada.
+
+**Estado:** 78 %, puerta abierta.
 
 ## R1 — Migración del modelo dimensional
 
@@ -161,7 +173,10 @@ Puerta de salida:
 
 - una OT nueva no modifica las cotas de otra OT;
 - las revisiones antiguas siguen auditables;
-- ningún registro pierde su URI de origen.
+- ningún registro pierde su URI de origen;
+- la interfaz principal deja de depender del modelo plano.
+
+**Estado:** 75 %, puerta abierta.
 
 ## R2 — Saneamiento de familias históricas
 
@@ -170,19 +185,22 @@ Puerta de salida:
 Prioridad:
 
 1. `4162045`: separar equipos, alias y posibles errores de codificación;
-2. `4196111`: localizar plano de conjunto y cargar dimensiones;
-3. `4196149`: convertir y conservar cotas originales en pulgadas;
-4. `1462827`: agregar OT-1632 y OT-1712 y cargar Ø1016/Ø1046;
-5. `4162054`: registrar Ø609,60 y Ø673,10;
-6. `10415863`: separar OT-262 de OT-1702;
-7. `10415860`: separar OT-243 de OT-1645;
-8. `10510386`: mantener bloqueado hasta encontrar plano dimensional.
+2. `4196111`: localizar plano de conjunto y resolver `4162038`;
+3. `10510386`: localizar plano dimensional de OT-270;
+4. `4196149`: reemplazar identificador provisional por SHA-256 real;
+5. `1462827`: agregar OT-1632 y OT-1712;
+6. `4162054`: ampliar historial OT-847/865;
+7. `10415863`: completar hashes de OT-262/1702;
+8. `10415860`: completar hashes de OT-243/1645.
 
 Puerta de salida:
 
 - cada familia habilitada tiene al menos un radio exterior aprobado;
-- los códigos conflictivos no pueden producir `MATCH` automático;
-- existe una tabla de conflictos resueltos y pendientes.
+- códigos conflictivos no producen `MATCH`;
+- existe una tabla de conflictos resueltos y pendientes;
+- las fuentes activas tienen hashes reales.
+
+**Estado:** 50 %, puerta abierta.
 
 ## R3 — Motor de identificación geométrica
 
@@ -190,19 +208,23 @@ Puerta de salida:
 
 Entregables:
 
-- comparación explícita de radios con umbral máximo de 30 mm;
+- comparación de radios con umbral máximo de 30 mm;
 - manejo de manto desnudo y revestimiento exterior;
 - normalización segura de pulgadas y milímetros;
 - puntuación multivariable para cotas axiales;
 - bloqueo por revisión desconocida;
 - explicación legible de cada decisión;
-- pruebas de frontera en 29, 30 y 31 mm.
+- auditoría persistente;
+- pruebas de frontera y OT cruzadas.
 
 Puerta de salida:
 
 - ninguna diferencia superior a 30 mm produce `MATCH`;
 - ninguna cota en pulgadas se interpreta como milímetros;
-- el resultado incluye fuentes y razones de aceptación/rechazo.
+- una OT no usa cotas de otra OT para aprobarse;
+- el resultado incluye fuentes, residuos y razones.
+
+**Estado:** 55 %, puerta abierta.
 
 ## R4 — Fotogrametría robusta para taller
 
@@ -215,12 +237,15 @@ Entregables:
 - rechazo de reflejos, desenfoque y zonas repetitivas;
 - selección adaptativa de pares y keyframes;
 - conjunto de imágenes reales anonimizadas con ground truth;
-- métricas de reproyección, cobertura y conectividad.
+- métricas de reproyección, cobertura y conectividad;
+- puerta única `READY`, `REVIEW` o `BLOCKED` antes de reconstruir.
 
 Puerta de salida:
 
-- reconstrucción repetible en al menos tres poleas de geometría distinta;
+- reconstrucción repetible en al menos tres poleas distintas;
 - fallos geométricos se bloquean en lugar de producir modelos plausibles falsos.
+
+**Estado:** 45 %, puerta abierta.
 
 ## R5 — Optimización y calibración
 
@@ -233,13 +258,15 @@ Entregables:
 - optimización no lineal del grafo de poses;
 - calibración intrínseca y distorsión por dispositivo;
 - propagación de incertidumbre hacia radio, longitud y centros;
-- almacenamiento de perfiles de cámara versionados.
+- perfiles de cámara versionados.
 
 Puerta de salida:
 
 - convergencia determinista en bancos sintéticos y reales;
 - mejora cuantificada frente al pipeline sin optimización;
 - incertidumbre reportada con supuestos explícitos.
+
+**Estado:** 5 %, puerta abierta.
 
 ## R6 — Robustez Android y campaña de dispositivos
 
@@ -258,7 +285,7 @@ Ensayos:
 - espacio insuficiente;
 - memoria, temperatura y duración;
 - captura máxima configurable;
-- permisos y almacenamiento en Android 10–15;
+- permisos y almacenamiento Android 10–15;
 - ejecución STEP/JNI y teselación real.
 
 Puerta de salida:
@@ -267,6 +294,8 @@ Puerta de salida:
 - sesiones interrumpidas recuperables;
 - consumo térmico y memoria documentados;
 - autoprueba STEP aprobada en ambos dispositivos.
+
+**Estado:** 10 %, puerta abierta.
 
 ## R7 — STEP, componentes y ensamblaje
 
@@ -288,6 +317,8 @@ Puerta de salida:
 - errores de unidad/orientación producen `REVIEW` o `BLOCKED`;
 - ninguna pieza se escala no uniformemente para forzar coincidencia.
 
+**Estado:** 45 %, puerta abierta.
+
 ## R8 — Calificación de ingeniería
 
 **Objetivo:** determinar si el sistema puede apoyar decisiones dimensionales reales.
@@ -295,7 +326,7 @@ Puerta de salida:
 Entregables:
 
 - protocolo de repetibilidad y reproducibilidad;
-- comparación contra huincha, pie de metro, micrómetro o instrumentos trazables según dimensión;
+- comparación contra instrumentos trazables según dimensión;
 - análisis de incertidumbre;
 - criterios de aceptación por uso;
 - informe de limitaciones y responsabilidades;
@@ -304,14 +335,16 @@ Entregables:
 Puerta de salida:
 
 - evidencia física suficiente para el uso declarado;
-- ninguna afirmación de precisión excede los resultados medidos;
+- ninguna afirmación de precisión excede resultados medidos;
 - aprobación técnica y de calidad antes de uso industrial.
+
+**Estado:** 0 %, puerta abierta.
 
 ## 7. Protocolo obligatorio de iteraciones
 
 Cada iteración debe crear un archivo inmutable en `docs/iterations/history/` y actualizar `docs/iterations/CURRENT.md`.
 
-El registro debe incluir como mínimo:
+El registro incluye como mínimo:
 
 - identificador y fecha;
 - objetivo y alcance;
@@ -324,7 +357,7 @@ El registro debe incluir como mínimo:
 - deuda técnica introducida;
 - estado del roadmap;
 - siguiente iteración obligatoria;
-- criterios de entrada y salida de esa siguiente iteración.
+- criterios de entrada y salida.
 
 Una iteración no se considera cerrada si no declara explícitamente qué debe continuar.
 
@@ -333,27 +366,29 @@ Una iteración no se considera cerrada si no declara explícitamente qué debe c
 - `alpha`: implementación y pruebas sintéticas; no apta para uso dimensional.
 - `device-alpha`: pruebas reales de captura/STEP en dispositivos objetivo.
 - `engineering-beta`: identificación y reconstrucción con campaña física parcial.
-- `validation-candidate`: protocolo metrológico ejecutado, aún sujeto a revisión.
-- `qualified`: únicamente después de aprobación técnica y de calidad para un uso claramente delimitado.
+- `validation-candidate`: protocolo metrológico ejecutado, sujeto a revisión.
+- `qualified`: únicamente después de aprobación técnica y de calidad para un uso delimitado.
 
 ## 9. Próxima iteración obligatoria
 
-### ITER-003 — Modelo OT/plano/revisión y puerta de radio
+### ITER-004 — Identificación multivariable y auditoría de decisiones
 
 Objetivos:
 
-1. implementar entidades separadas para OT, plano, revisión y superficie;
-2. migrar sin pérdida la semilla existente;
-3. introducir `BARE_SHELL_RADIUS` y `OUTER_LAGGING_RADIUS`;
-4. implementar la puerta dura de ±30 mm en radio;
-5. agregar pruebas de 29/30/31 mm, pulgadas, revisiones y superficies incompatibles;
-6. cargar como casos iniciales los planos auditados de `10415863`, `10415860`, `4162054`, `4196149` y `1462827`;
-7. mantener `4162045`, `4196111` y `10510386` en `BLOCKED` hasta completar evidencia.
+1. combinar radio con largo de manto, cara, centros y eje;
+2. evaluar cada residual contra una tolerancia explícita;
+3. distinguir evidencia faltante, advertencia y contradicción crítica;
+4. impedir la aprobación cruzada entre OT o revisiones;
+5. producir puntuación, estado, razones y fuentes reproducibles;
+6. persistir una auditoría de decisión sin modificar la evidencia histórica;
+7. agregar pruebas de OT cruzada, revisión ambigua y medición parcial;
+8. publicar `0.18.0-alpha22`.
 
 Criterio de cierre:
 
-- migración reproducible;
-- pruebas exitosas;
-- decisiones explicables con fuente;
-- ninguna familia incompleta produce `MATCH` automático;
-- registro de ITER-003 actualizado con la siguiente prioridad.
+- motor multivariable probado;
+- decisiones auditables;
+- contradicciones críticas producen `BLOCKED`;
+- evidencia incompleta produce `REVIEW`;
+- CI exitoso;
+- registro de ITER-004 actualizado con ITER-005.
