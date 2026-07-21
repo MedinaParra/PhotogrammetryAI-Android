@@ -78,6 +78,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_revisioned_knowledge_v46_test.sh
       - name: Test multivariable identification and cross-OT blocking
         run: bash PulleyKnowledgeMvp/tools/run_identification_decision_v47_test.sh
+      - name: Test fail-closed photogrammetry safety gate
+        run: bash PulleyKnowledgeMvp/tools/run_photogrammetry_safety_v48_test.sh
       - name: Fetch verified pruned STEP-enabled cadcore v2 release
         run: |
           set -euo pipefail
@@ -104,7 +106,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha22-build-diagnostic
+          name: SKM-Polea-AI-alpha23-build-diagnostic
           path: artifacts/gradle-build.log
           if-no-files-found: warn
           retention-days: 14
@@ -112,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          CHECK="$RUNNER_TEMP/alpha22-apk"
+          CHECK="$RUNNER_TEMP/alpha23-apk"
           rm -rf "$CHECK" && mkdir -p "$CHECK"
           unzip -q "$APK" -d "$CHECK"
           test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
@@ -131,20 +133,20 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha22-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          manifest=json.loads(Path("${{ runner.temp }}/alpha23-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
           assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
           assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha22 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          print("alpha23 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
           PY
       - name: Prepare artifact
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha22.apk
-          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha22.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha23.apk
+          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha23.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha22
+          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha23
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
