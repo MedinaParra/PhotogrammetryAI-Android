@@ -80,6 +80,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_identification_decision_v47_test.sh
       - name: Test fail-closed photogrammetry safety gate
         run: bash PulleyKnowledgeMvp/tools/run_photogrammetry_safety_v48_test.sh
+      - name: Test bounded local bundle adjustment and camera profiles
+        run: bash PulleyKnowledgeMvp/tools/run_local_bundle_adjustment_v49_test.sh
       - name: Fetch verified pruned STEP-enabled cadcore v2 release
         run: |
           set -euo pipefail
@@ -87,12 +89,10 @@ jobs:
           TARGET=PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v2.aar
           RELEASE_URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v2/freecad-android-cadcore-step-v2.aar"
           EXPECTED="43c5b01b546253498aa679deba7b31ccf85380007f79dc270245a5e0cb8ddff8"
-          curl --fail --location --retry 4 --retry-delay 3 \
-            "$RELEASE_URL" --output "$TARGET"
+          curl --fail --location --retry 4 --retry-delay 3 "$RELEASE_URL" --output "$TARGET"
           ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
           test "$ACTUAL" = "$EXPECTED"
-          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nNATIVE_LIBRARY_COUNT=25\n' \
-            "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
+          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nNATIVE_LIBRARY_COUNT=25\n' "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -100,13 +100,12 @@ jobs:
       - name: Build STEP-enabled debug APK
         run: |
           set -o pipefail
-          gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 \
-            | tee artifacts/gradle-build.log
+          gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 | tee artifacts/gradle-build.log
       - name: Upload Gradle diagnostic
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha23-build-diagnostic
+          name: SKM-Polea-AI-alpha24-build-diagnostic
           path: artifacts/gradle-build.log
           if-no-files-found: warn
           retention-days: 14
@@ -114,7 +113,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          CHECK="$RUNNER_TEMP/alpha23-apk"
+          CHECK="$RUNNER_TEMP/alpha24-apk"
           rm -rf "$CHECK" && mkdir -p "$CHECK"
           unzip -q "$APK" -d "$CHECK"
           test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
@@ -133,20 +132,20 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha23-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          manifest=json.loads(Path("${{ runner.temp }}/alpha24-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
           assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
           assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha23 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          print("alpha24 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
           PY
       - name: Prepare artifact
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha23.apk
-          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha23.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha24.apk
+          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha24.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha23
+          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha24
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
