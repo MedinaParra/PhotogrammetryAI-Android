@@ -212,9 +212,10 @@ public final class RuntimeReviewActivity extends Activity {
                             + "\",\"fallbackUnoptimized\":true,\"optimizedGeometryAccepted\":false}");
             RuntimeReconstructionCoordinator.Outcome fallback = null;
             if (report != null) {
-                PhotogrammetrySafetyGateAdapter.SupplementalMetrics metrics = supplemental == null
-                        ? PhotogrammetrySafetyGateAdapter.SupplementalMetrics.unknown()
-                        : supplemental.toSafetyGate();
+                PhotogrammetrySafetyGateAdapter.SupplementalMetrics metrics =
+                        supplemental == null
+                                ? PhotogrammetrySafetyGateAdapter.SupplementalMetrics.unknown()
+                                : supplementalMetrics(supplemental.supplemental);
                 fallback = RuntimeReconstructionCoordinator.evaluate(
                         this, sessionId, report, metrics, null, false, true);
             }
@@ -230,6 +231,16 @@ public final class RuntimeReviewActivity extends Activity {
         final String message = "REVIEW · " + aborted.reason + " @ " + aborted.stage
                 + "\nFALLBACK SIN OPTIMIZAR · no se acepta geometría BA.";
         runOnUiThread(() -> showCompleted(message, false, true));
+    }
+
+    private static PhotogrammetrySafetyGateAdapter.SupplementalMetrics supplementalMetrics(
+            PhotogrammetrySupplementalMetricsCore.Result values) {
+        if (values == null) return PhotogrammetrySafetyGateAdapter.SupplementalMetrics.unknown();
+        return new PhotogrammetrySafetyGateAdapter.SupplementalMetrics(
+                values.homographyDominanceRatio,
+                values.blurryFrameFraction,
+                values.reflectiveFrameFraction,
+                values.repetitiveAmbiguityFraction);
     }
 
     private RuntimeTelemetryCore.Result telemetry(long startedAtEpochMs, long startedElapsedMs,
