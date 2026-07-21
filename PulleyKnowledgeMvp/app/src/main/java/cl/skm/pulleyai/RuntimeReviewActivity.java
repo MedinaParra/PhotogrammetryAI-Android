@@ -50,7 +50,7 @@ public final class RuntimeReviewActivity extends Activity {
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
         TextView subtitle = text(
-                "El análisis tiene 180 s de presupuesto y checkpoints dentro de detección/matching. La evidencia solo se publica al completar una generación atómica; cancelar conserva fallback sin optimizar.",
+                "El análisis tiene 180 s de presupuesto, checkpoints profundos y refinamiento rotacional acotado. Solo una generación atómica comprometida puede quedar vigente.",
                 14, false);
         subtitle.setPadding(0, dp(5), 0, dp(15));
         root.addView(subtitle);
@@ -163,6 +163,10 @@ public final class RuntimeReviewActivity extends Activity {
                     RuntimeReconstructionCoordinator.evaluate(
                             this, sessionId, report, gateMetrics,
                             window.ready ? window.problem : null, resources, false);
+            if (outcome.rotationalBundleAdjustment != null) {
+                transaction.stageText("runtime_rotational_ba.json",
+                        outcome.rotationalBundleAdjustment.canonicalJson());
+            }
 
             long heapAfter = usedHeapBytes();
             long pssAfter = Debug.getPss();
@@ -189,7 +193,8 @@ public final class RuntimeReviewActivity extends Activity {
                     + "\n" + supplemental.summary() + "\n" + window.summary()
                     + "\n" + diagnostics.summary() + "\n" + telemetry.summary()
                     + "\n" + manifest.summary() + "\n" + publication.summary()
-                    + "\n\nSolo esta generación comprometida queda vigente para exportación.";
+                    + "\n\nLos intervalos de residuos son estadísticos y no metrológicos."
+                    + "\nSolo esta generación comprometida queda vigente para exportación.";
             runOnUiThread(() -> showCompleted(summary,
                     outcome.decision.canPublishOptimizedGeometry(),
                     outcome.decision.useUnoptimizedFallback));
@@ -334,7 +339,8 @@ public final class RuntimeReviewActivity extends Activity {
                                     DeviceDiagnosticsCore.Result diagnostics,
                                     RuntimeTelemetryCore.Result telemetry,
                                     RuntimeExecutionControlCore.Token control) {
-        return "{\n\"schema\":\"skm-runtime-audit/4\""
+        RotationalBundleAdjustmentCore.Result rotational = outcome.rotationalBundleAdjustment;
+        return "{\n\"schema\":\"skm-runtime-audit/5\""
                 + ",\n\"auditId\":" + outcome.auditId
                 + ",\n\"cacheStatus\":\"" + escape(cache.status) + "\""
                 + ",\n\"decodePasses\":" + cache.decodePasses
@@ -345,6 +351,13 @@ public final class RuntimeReviewActivity extends Activity {
                 + ",\n\"optimized\":" + outcome.decision.useOptimizedGeometry
                 + ",\n\"fallback\":" + outcome.decision.useUnoptimizedFallback
                 + ",\n\"windowStatus\":\"" + escape(window.status) + "\""
+                + ",\n\"rotationalStatus\":"
+                + (rotational == null ? "null" : "\"" + escape(rotational.status) + "\"")
+                + ",\n\"rotationApplied\":" + (rotational != null && rotational.rotationApplied)
+                + ",\n\"maximumRotationDegrees\":"
+                + (rotational == null ? "null" : number(rotational.maximumRotationDegrees))
+                + ",\n\"residualStatisticsLabel\":"
+                + (rotational == null ? "null" : "\"" + rotational.residualStatistics.label + "\"")
                 + ",\n\"diagnosticsState\":\"" + diagnostics.state + "\""
                 + ",\n\"telemetryState\":\"" + telemetry.state + "\""
                 + ",\n\"controlState\":\"" + control.state() + "\"\n}";
@@ -373,6 +386,10 @@ public final class RuntimeReviewActivity extends Activity {
     private static long availableMemoryBytes() {
         Runtime runtime = Runtime.getRuntime();
         return Math.max(0L, runtime.maxMemory() - usedHeapBytes());
+    }
+
+    private static String number(double value) {
+        return Double.isFinite(value) ? Double.toString(value) : "null";
     }
 
     private static String escape(String value) {
