@@ -73,6 +73,14 @@ public final class LauncherActivity extends Activity {
         });
         root.addView(resume);
 
+        Button runtime = button("VALIDACIÓN RUNTIME / SAFETY GATE");
+        runtime.setOnClickListener(view -> openRuntimeReview(latestSessionId()));
+        root.addView(runtime);
+
+        Button campaign = button("CAMPAÑA FÍSICA DE DISPOSITIVO");
+        campaign.setOnClickListener(view -> startActivity(new Intent(this, DeviceCampaignActivity.class)));
+        root.addView(campaign);
+
         Button cad = button("ENSAMBLAJE CAD / IMPORTAR STEP");
         cad.setOnClickListener(view -> openCad(latestSessionId()));
         root.addView(cad);
@@ -150,6 +158,12 @@ public final class LauncherActivity extends Activity {
         startActivity(intent);
     }
 
+    private void openRuntimeReview(String id) {
+        Intent intent = new Intent(this, RuntimeReviewActivity.class);
+        intent.putExtra(RuntimeReviewActivity.EXTRA_SESSION_ID, id);
+        startActivity(intent);
+    }
+
     private void openCad(String id) {
         Intent intent = new Intent(this, CadAssemblyActivity.class);
         intent.putExtra(CadAssemblyActivity.EXTRA_SESSION_ID, id);
@@ -170,6 +184,7 @@ public final class LauncherActivity extends Activity {
                 : "Captura abierta: " + open.label + " · " + open.accepted + " fotos aceptadas")
                 + "\nCAD: " + core.runtime
                 + (core.stepReady ? " · STEP NATIVO LISTO" : " · STEP pendiente")
+                + "\nRuntime: safety gate y campaña física disponibles"
                 + (core.diagnostic == null || core.diagnostic.isEmpty() ? "" : "\n" + core.diagnostic));
         stateView.setTextColor(core.stepReady ? Color.rgb(25, 108, 65)
                 : open == null ? Color.rgb(35, 84, 117) : Color.rgb(145, 82, 0));
@@ -201,6 +216,9 @@ public final class LauncherActivity extends Activity {
             Button openButton = button("CAPTURA");
             openButton.setOnClickListener(view -> openCapture(session.id));
             actions.addView(openButton, new LinearLayout.LayoutParams(0, -2, 1f));
+            Button runtimeButton = button("VALIDAR");
+            runtimeButton.setOnClickListener(view -> openRuntimeReview(session.id));
+            actions.addView(runtimeButton, new LinearLayout.LayoutParams(0, -2, 1f));
             Button cadButton = button("CAD");
             cadButton.setOnClickListener(view -> openCad(session.id));
             actions.addView(cadButton, new LinearLayout.LayoutParams(0, -2, 1f));
