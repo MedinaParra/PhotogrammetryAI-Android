@@ -1,4 +1,4 @@
-# SKM Polea AI — Android offline alpha32
+# SKM Polea AI — Android offline alpha33
 
 Aplicación Android local para capturar evidencia fotográfica de poleas, ejecutar reconstrucción geométrica experimental, comparar cotas revisionadas y trabajar con componentes STEP sin depender de servidores.
 
@@ -35,13 +35,14 @@ MATCH solo cuando error_radio_mm <= 30 y no existe contradicción crítica
 - Harris y descriptor binario local.
 - Ratio test, correspondencia simétrica, cobertura y coherencia espacial.
 - Fundamental, esencial, pose, triangulación DLT y tracks multivista.
+- Checkpoints de cancelación durante detección Harris y matching en ambos sentidos.
 - Pose graph con auditoría de ciclos.
 - Nube dispersa, ajuste cilíndrico y escala condicionada por referencia.
 - Competencia homografía/fundamental, desenfoque, reflejos y repetición calculados por sesión.
 - Safety gate fail-closed `READY`, `REVIEW` y `BLOCKED` conectado al flujo runtime.
 - Métricas ausentes nunca se reemplazan por valores favorables.
 
-### Optimización runtime alpha32
+### Optimización y recuperación runtime alpha33
 
 - Bundle adjustment **local acotado**, no global.
 - Máximo 8 cámaras, 120 puntos y 1500 observaciones.
@@ -52,7 +53,20 @@ MATCH solo cuando error_radio_mm <= 30 y no existe contradicción crítica
 - Una preparación compartida alimenta métricas suplementarias y ventana BA.
 - Deadline monotónico de 180 segundos.
 - Cancelación visible con fallback obligatorio sin optimizar.
-- Caché, métricas, ventana, telemetría, diagnóstico, aborto y auditoría exportables.
+- Cada ejecución se escribe en `runtime-generations/<run>.pending`.
+- Solo una generación renombrada a `.committed` y señalada por el puntero activo se considera vigente.
+- Rollback conserva la generación válida anterior.
+- Una cancelación publica una generación `ABORTED` sin ventana BA parcial.
+- El exportador incluye exclusivamente la generación activa comprometida.
+
+### Manifiesto reproducible
+
+- `generation_manifest.json` conserva ruta, tamaño y SHA-256 de archivos runtime.
+- `campaign_evidence_manifest.json` vincula versión, APK instalado, dispositivo, SDK, sesión, código, OT, frames y evidencia runtime.
+- Los elementos se ordenan antes de calcular la huella.
+- El mismo contenido produce JSON y fingerprint reproducibles.
+
+La huella SHA-256 demuestra identidad del contenido. No equivale a firma digital, autoría corporativa, sellado de tiempo ni aprobación de calidad.
 
 ### Diagnóstico de dispositivo
 
@@ -77,8 +91,9 @@ Estos valores son diagnósticos operacionales. No equivalen a temperatura de CPU
 
 ## Límites actuales
 
-- `SessionOverlapAnalyzer` aún no consulta cancelación dentro de sus bucles internos.
-- Los artefactos parciales todavía no se promueven mediante transacción atómica.
+- Fundamental, recuperación de pose, triangulación y `BitmapFactory` no tienen checkpoints internos.
+- La promoción transaccional cubre archivos y puntero, no una transacción coordinada con SQLite.
+- La huella reproducible no está firmada por una identidad corporativa.
 - No se optimizan rotaciones ni intrínsecos y no existe BA global.
 - No hay calibración física ni campaña ejecutada en Samsung A15 u Honor X5C.
 - El historial nativo es parcial en Android antiguos y no cubre todos los fallos JNI.
@@ -96,7 +111,7 @@ La aplicación es una alpha de ingeniería. No debe utilizarse para liberar dime
 - `targetSdk 35`
 - `minSdk 24`
 - ABI actual: `arm64-v8a`
-- Versión: `0.18.0-alpha32`
+- Versión: `0.18.0-alpha33`
 
 ## Compilar
 
@@ -112,15 +127,15 @@ PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
 
 ## Validación automática
 
-El workflow `.github/workflows/build-pulley-mvp-apk.yml` ejecuta 31 gates Java, verifica el AAR, compila la APK y audita el cierre OCCT. Alpha32 fue validada en GitHub Actions run `#643`.
+El workflow `.github/workflows/build-pulley-mvp-apk.yml` ejecuta 32 gates Java, verifica el AAR, compila la APK y audita el cierre OCCT. Alpha33 fue validada en GitHub Actions run `#670`.
 
 ## Roadmap e historial
 
 - Roadmap: `docs/ROADMAP_ENGINEERING.md`.
 - Estado y avance: `docs/iterations/CURRENT.md`.
 - Historial: `docs/iterations/history/`.
-- Última cerrada: `ITER-014_2026-07-21_runtime-cache-cancellation-device-diagnostics.md`.
-- Siguiente: `ITER-015 — Checkpoints profundos, recuperación transaccional y campaña reproducible`.
+- Última cerrada: `ITER-015_2026-07-21_deep-cancellation-transactional-evidence.md`.
+- Siguiente: `ITER-016 — Rotaciones BA acotadas e incertidumbre estadística`.
 
 Antes de cerrar una iteración:
 
