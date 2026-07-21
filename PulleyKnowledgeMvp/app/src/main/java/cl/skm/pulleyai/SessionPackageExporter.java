@@ -32,12 +32,18 @@ public final class SessionPackageExporter {
         try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(output)))) {
             putText(zip, "manifest.json", manifest(session, frames));
             copyIfExists(zip, new File(sessionDir, "overlap_report.json"), "overlap_report.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_frame_cache.json"),
+                    "runtime/runtime_frame_cache.json");
             copyIfExists(zip, new File(sessionDir, "runtime_supplemental_metrics.json"),
                     "runtime/runtime_supplemental_metrics.json");
             copyIfExists(zip, new File(sessionDir, "runtime_ba_window.json"),
                     "runtime/runtime_ba_window.json");
             copyIfExists(zip, new File(sessionDir, "runtime_telemetry.json"),
                     "runtime/runtime_telemetry.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_device_diagnostics.json"),
+                    "runtime/runtime_device_diagnostics.json");
+            copyIfExists(zip, new File(sessionDir, "runtime_abort.json"),
+                    "runtime/runtime_abort.json");
             copyIfExists(zip, new File(sessionDir, "runtime_audit.json"),
                     "runtime/runtime_audit.json");
             for (CaptureStore.Frame frame : frames) {
@@ -71,7 +77,7 @@ public final class SessionPackageExporter {
                 session.shellLengthMm, freeBytes);
         StringBuilder json = new StringBuilder(4096 + frames.size() * 500);
         json.append("{\n");
-        field(json, "schema", "skm-polea-capture/3", true);
+        field(json, "schema", "skm-polea-capture/4", true);
         field(json, "sessionId", session.id, true);
         field(json, "label", session.label, true);
         field(json, "status", session.status, true);
@@ -86,6 +92,7 @@ public final class SessionPackageExporter {
         number(json, "rejected", session.rejected, true);
         field(json, "reconstructionReady", Boolean.toString(readiness.ready()), true, false);
         field(json, "runtimeEvidenceDirectory", "runtime/", true);
+        field(json, "runtimeBudgetMs", "180000", true, false);
         json.append("  \"readinessSummary\": \"").append(escape(readiness.summary())).append("\",\n");
         json.append("  \"frames\": [\n");
         for (int i = 0; i < frames.size(); i++) {
