@@ -4,12 +4,12 @@
 **Rama:** `agent/photogrammetry-validation-alpha20`  
 **Base de producto:** `product/single-device-photogrammetry-v1`  
 **Actualizado:** 2026-07-21  
-**Última iteración cerrada:** `ITER-015`  
-**Siguiente iteración:** `ITER-016`  
-**Versión:** `0.18.0-alpha33`  
-**Avance integral estimado:** `89 %`
+**Última iteración cerrada:** `ITER-016`  
+**Siguiente iteración:** `ITER-017`  
+**Versión:** `0.18.0-alpha34`  
+**Avance integral estimado:** `92 %`
 
-> El avance integral representa madurez del producto alpha respecto del roadmap funcional, no el promedio aritmético de las fases. La preparación industrial/metrológica permanece en 22 %.
+> El avance integral representa madurez del producto alpha respecto del roadmap funcional, no el promedio aritmético de las fases. La preparación industrial/metrológica permanece en 24 %.
 
 ## 1. Propósito del producto
 
@@ -40,6 +40,7 @@ La aplicación sigue siendo una alpha de ingeniería. No está autorizada para l
 - Cancelación, timeout o evidencia parcial nunca pueden publicar geometría optimizada.
 - Solo una generación comprometida puede considerarse vigente.
 - Una huella SHA-256 reproducible no equivale a firma digital ni aprobación técnica.
+- Un intervalo empírico de reproyección no equivale a incertidumbre metrológica.
 - Temperatura de batería y estado térmico Android son diagnósticos, no metrología térmica.
 
 ## 3. Regla dimensional de identificación
@@ -86,7 +87,8 @@ CaptureStore
 ├── RuntimeSupplementalMetricsBuilder
 └── RuntimeBundleWindowBuilder
 → PhotogrammetrySafetyGate
-→ LocalBundleAdjustmentCore (solo READY)
+→ LocalBundleAdjustmentCore
+→ RotationalBundleAdjustmentCore
 → RuntimeReconstructionDecision
 → RuntimeEvidenceTransactionCore
 → generación .committed + puntero activo
@@ -99,8 +101,9 @@ Límites BA:
 - 120 puntos;
 - 1500 observaciones;
 - cámara global 0 fija;
-- rotaciones e intrínsecos todavía fijos;
-- pérdida Huber y priors de traslación.
+- puntos, traslaciones y pequeñas rotaciones de cámaras secundarias;
+- intrínsecos todavía fijos;
+- pérdida Huber, damping y priors.
 
 ## 5. Estado técnico comprobado
 
@@ -114,7 +117,10 @@ Límites BA:
 - competencia homografía/fundamental y degradación visual por sesión;
 - safety gate fail-closed `READY/REVIEW/BLOCKED` conectado al runtime;
 - ventana BA desde cámaras, puntos, tracks y píxeles reales;
-- BA local acotado y fallback explícito;
+- BA local acotado con puntos y traslaciones;
+- segunda etapa rotacional acotada con cámara 0 fija;
+- límites rotacionales, prior, damping y fallback exacto al BA base;
+- mediana, MAD, P90 e intervalo empírico 95 % de residuos etiquetado como no metrológico;
 - preparación compartida entre métricas y ventana BA;
 - deadline monotónico de 180 s y cancelación visible;
 - generaciones runtime `.pending`/`.committed` con rollback y puntero activo;
@@ -125,14 +131,16 @@ Límites BA:
 - evidencia revisionada por OT/plano/revisión y auditoría append-only;
 - STEP/OCCT para `arm64-v8a`, teselación y ensamblaje rígido;
 - ZIP de sesión que exporta exclusivamente la generación comprometida activa;
-- 32 gates Java y compilación alpha33.
+- 33 gates Java y compilación alpha34.
 
 ### Deuda crítica actual
 
+- intrínsecos dependen de Camera2 o perfiles aún no validados físicamente;
+- no existe BA global ni Schur complement;
+- los intervalos estadísticos no se propagan a dimensiones físicas;
 - fundamental, pose, triangulación y Bitmap decode no tienen checkpoints internos;
 - la promoción transaccional cubre filesystem, no una transacción coordinada con SQLite;
 - la huella de campaña no está firmada con una identidad corporativa;
-- no se optimizan rotaciones ni intrínsecos y no existe BA global;
 - no hay calibración física de Samsung A15 ni Honor X5C;
 - no se ejecutaron campañas reales de memoria, temperatura, JNI o repetibilidad;
 - diagnóstico nativo es parcial en SDK antiguos;
@@ -171,17 +179,17 @@ Completado: radio de 30 mm, cotas axiales, estados por dimensión, bloqueo de cr
 
 Pendiente: tolerancias por plano, migración visual completa y validación física.
 
-## R4 — Fotogrametría robusta para taller — 94 %
+## R4 — Fotogrametría robusta para taller — 95 %
 
 Completado: cobertura, correspondencias, geometría multivista, planaridad, degradación, pose graph, reproyección, gate runtime, cancelación en features/matching y evidencia exportada.
 
 Pendiente: checkpoints dentro de fundamental/pose/triangulación, banco real con ground truth y descriptor más robusto a rotación/escala/superficies industriales.
 
-## R5 — Optimización y calibración — 72 %
+## R5 — Optimización y calibración — 82 %
 
-Completado: ventana BA real, límites 8/120/1500, cámara 0 fija, puntos/traslaciones, Huber, priors, métricas antes/después y perfiles Brown-Conrady versionados.
+Completado: ventana BA real, límites 8/120/1500, cámara 0 fija, puntos/traslaciones, pequeñas rotaciones, Huber, priors, damping, métricas antes/después y perfiles Brown-Conrady versionados.
 
-Pendiente: rotaciones, intrínsecos, BA global/Schur, calibración física e incertidumbre dimensional.
+Pendiente: corrección focal condicionada, principal point/distorsión bajo validación física, BA global/Schur, calibración física e incertidumbre dimensional.
 
 ## R6 — Robustez Android y dispositivos — 46 %
 
@@ -203,15 +211,14 @@ Disponible: importación OCCT/JNI, BRep, teselación, bounding box, normales, tr
 
 Pendiente: grandes conjuntos reales, unidades/orientaciones diversas, memoria/JNI en dispositivo, componentes de taller y factibilidad `armeabi-v7a`.
 
-## R8 — Calificación de ingeniería — 8 %
+## R8 — Calificación de ingeniería — 10 %
 
-Disponible: estructura fail-closed, esquema de campaña, diagnóstico automático y manifiesto reproducible sin firma.
+Disponible: estructura fail-closed, esquema de campaña, diagnóstico automático, manifiesto reproducible y estadística empírica explícitamente no metrológica.
 
-Pendiente: repetibilidad, reproducibilidad, instrumentos trazables, incertidumbre, criterios por uso, revisión de calidad y versión calificada.
+Pendiente: repetibilidad, reproducibilidad, instrumentos trazables, incertidumbre dimensional, criterios por uso, revisión de calidad y versión calificada.
 
 ### Iteraciones cerradas recientes
 
-- ITER-008: productores de degeneración visual.
 - ITER-009: refinamiento acotado del pose graph.
 - ITER-010: gate de calificación profesional.
 - ITER-011: revisión runtime visible y campaña inicial.
@@ -219,6 +226,7 @@ Pendiente: repetibilidad, reproducibilidad, instrumentos trazables, incertidumbr
 - ITER-013: métricas suplementarias y BA admitido.
 - ITER-014: caché compartida, cancelación y diagnóstico automático.
 - ITER-015: cancelación profunda parcial, recuperación transaccional y manifiesto reproducible.
+- ITER-016: rotaciones BA acotadas e intervalos estadísticos de residuos.
 
 Los registros completos están en `docs/iterations/history/`.
 
@@ -247,26 +255,26 @@ Una iteración no se considera cerrada sin CI, historial y siguiente paso.
 
 ## 9. Próxima iteración obligatoria
 
-### ITER-016 — Rotaciones BA acotadas e incertidumbre estadística
+### ITER-017 — Intrínsecos focales condicionados y observabilidad
 
 Objetivos:
 
-1. agregar parámetros de rotación de pequeña amplitud a cámaras distintas de la cámara 0;
-2. mantener gauge fijo, límites 8/120/1500 y rotación de referencia inmutable;
-3. incorporar damping y priors rotacionales;
-4. rechazar soluciones que empeoren reproyección, profundidad o coherencia del pose graph;
-5. estimar dispersión, percentiles e intervalos estadísticos de residuos;
-6. etiquetar esos intervalos como estadísticos, no metrológicos;
-7. probar convergencia, degeneración, outliers y fallback;
-8. publicar `0.18.0-alpha34`.
+1. permitir una corrección pequeña de `fx`/`fy` manteniendo su relación y principal point fijo;
+2. usar priors fuertes y límites porcentuales por cámara;
+3. exigir suficiente distribución de puntos, profundidad y diversidad de cámaras;
+4. bloquear ajustes focales mal condicionados o correlacionados con pose;
+5. aceptar únicamente cuando mejora reproyección y profundidad sin superar límites;
+6. conservar fallback al resultado rotacional/base;
+7. publicar sensibilidad y condición como estadística no metrológica;
+8. publicar `0.18.0-alpha35`.
 
 Criterios de cierre:
 
-- rotaciones acotadas incorporadas al BA local;
-- cámara 0 y gauge verificados;
-- aceptación exige mejora geométrica integral;
-- intervalos estadísticos no se presentan como incertidumbre trazable;
-- fallback por degeneración probado;
-- 33 gates o más en `success`;
+- corrección focal acotada incorporada;
+- observabilidad y límites verificados;
+- principal point y distorsión permanecen fijos;
+- fallback por mala condición probado;
+- sensibilidad no se presenta como calibración física;
+- 34 gates o más en `success`;
 - Gradle, APK y cierre OCCT aprobados;
-- ITER-016 archivada e ITER-017 declarada.
+- ITER-017 archivada e ITER-018 declarada.
