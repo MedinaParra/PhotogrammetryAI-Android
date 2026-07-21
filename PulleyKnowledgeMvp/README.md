@@ -1,6 +1,6 @@
-# SKM Polea AI — Android offline alpha20
+# SKM Polea AI — Android offline alpha24
 
-Aplicación Android local para capturar evidencia fotográfica de poleas, ejecutar una reconstrucción geométrica experimental y comparar el resultado con componentes STEP sin depender de un servidor.
+Aplicación Android local para capturar evidencia fotográfica de poleas, ejecutar reconstrucción geométrica experimental, comparar cotas revisionadas y trabajar con componentes STEP sin depender de servidores.
 
 ## Estado comprobado en código
 
@@ -8,63 +8,80 @@ Aplicación Android local para capturar evidencia fotográfica de poleas, ejecut
 
 - Camera2 con preview horizontal y captura JPEG.
 - Dos anillos guiados de 12 sectores.
-- Registro por fotografía de orientación, movimiento, exposición, ISO, enfoque, cámara y orientación JPEG.
+- Registro de orientación, movimiento, exposición, enfoque, cámara y SHA-256 por fotografía.
 - Evaluación local de nitidez, iluminación y estabilidad.
-- Sesiones SQLite recuperables.
-- SHA-256 por fotografía y exportación ZIP mediante Storage Access Framework.
-- Selección balanceada de hasta 48 fotogramas con presupuesto preventivo de memoria y almacenamiento.
+- Sesiones SQLite recuperables y exportación ZIP.
+- Selección balanceada de hasta 48 fotogramas con presupuesto de memoria y almacenamiento.
+
+### Conocimiento dimensional revisionado
+
+- Modelo `MaterialFamily -> WorkOrder -> Drawing -> DrawingRevision -> DimensionEvidence`.
+- Evidencia separada por OT, plano, revisión, dimensión y superficie.
+- Radios `BARE_SHELL` y `OUTER_LAGGING` diferenciados.
+- Conservación de unidad original y valor normalizado en milímetros.
+- Puerta dura de radio:
+
+```text
+error_radio_mm = abs(radio_observado - radio_referencia)
+MATCH solo cuando error_radio_mm <= 30 y no existe contradicción crítica
+```
+
+- Identificación multivariable con residuos `PASS`, `WARNING`, `CONTRADICTION` y `MISSING_REFERENCE`.
+- Auditoría local append-only con puntuación, fuentes y huella reproducible.
+- Familias documentales conflictivas permanecen en `BLOCKED`.
 
 ### Reconstrucción experimental
 
-- Detector Harris y descriptor binario local de 64 bits.
-- Ratio test, correspondencia simétrica y control de distribución espacial.
-- Matriz fundamental por ocho puntos normalizados, RANSAC determinista y error de Sampson.
-- Matriz esencial calibrada, cuatro soluciones de pose, cheirality y paralaje.
-- Triangulación DLT con filtros de profundidad y error de reproyección.
-- Tracks de tres o más imágenes.
-- Grafo global de poses con propagación por aristas confiables y auditoría de cierres de ciclo.
-- Fusión robusta de nube dispersa y ajuste experimental de cilindro.
-- Escala por referencia conocida y detección de referencias contradictorias.
+- Detector Harris y descriptor binario local.
+- Ratio test, correspondencia simétrica, cobertura y coherencia espacial.
+- Fundamental, esencial, pose, triangulación DLT y tracks multivista.
+- Grafo de poses con propagación y auditoría de ciclos.
+- Nube dispersa, ajuste cilíndrico y escala por referencia conocida.
+- Safety gate fail-closed `READY`, `REVIEW` y `BLOCKED` para cobertura, paralaje, planaridad, grafo, ciclos, reproyección y degradación.
+- Métricas ausentes producen `REVIEW`, no aprobación silenciosa.
+
+### Optimización alpha24
+
+- Bundle adjustment **local acotado**, no global.
+- Máximo de 8 cámaras, 120 puntos y 1500 observaciones.
+- Cámara 0 fija para eliminar el gauge.
+- Refinamiento de puntos y traslaciones con pérdida Huber y priors.
+- Admisión únicamente cuando el safety gate está en `READY`.
+- RMS, mediana, P90, profundidad positiva e iteraciones aceptadas.
+- Perfiles Brown-Conrady versionados para intrínsecos y distorsión.
+- Los perfiles no validados no pueden utilizarse automáticamente.
 
 ### STEP y ensamblaje CAD
 
 - AAR `cadcore-step-v2` con OCCT 7.9.2 para `arm64-v8a`.
-- Importación mediante `STEPControl_Reader` a través del puente JNI.
+- Importación mediante `STEPControl_Reader` por puente JNI.
 - BRep, teselación, bounding box y normales.
-- Transformaciones rígidas de componentes, sin escalado no uniforme.
-- Autoprueba del kernel y bloqueo del procesamiento cuando la puerta no está aprobada.
-- Comparación cuantitativa STEP–reconstrucción y estados `MATCH`, `REVIEW` y `BLOCKED`.
-- Exportación auditable del ensamblaje y conservación del STEP original.
+- Transformaciones rígidas sin escalado no uniforme.
+- Autoprueba del kernel y gates de empaquetado.
+- Comparación cuantitativa STEP–reconstrucción.
+- Exportación sin destruir el STEP original.
 
-## Clasificación de madurez
+## Límites actuales
 
-### Implementado y cubierto por pruebas sintéticas
+- El safety gate y el BA local todavía no gobiernan el pipeline runtime completo.
+- No se optimizan rotaciones ni existe bundle adjustment global.
+- No hay calibración física de Samsung A15 ni Honor X5C.
+- Homografía, reflejos y ambigüedad repetitiva no se calculan todavía automáticamente por sesión.
+- La interfaz de conocimiento heredada sigue disponible durante la migración.
+- `armeabi-v7a` permanece pendiente.
+- Las pruebas sintéticas y una APK compilada no constituyen validación metrológica.
 
-La matemática fundamental, pose esencial, triangulación, tracks, cierres de ciclo, ajuste cilíndrico, escala, restricciones CAD y políticas STEP se ejecutan en pruebas Java deterministas dentro de GitHub Actions.
+## No validado para metrología industrial
 
-### Compilado, pero todavía no validado suficientemente en teléfono
+La aplicación es una alpha de ingeniería. No debe utilizarse para liberar dimensionalmente una polea hasta completar campañas físicas de repetibilidad, calibración por dispositivo, comparación contra instrumentos trazables y análisis de incertidumbre.
 
-La captura Camera2, persistencia Android, importación STEP/JNI, teselación nativa, recuperación tras interrupciones y procesamiento prolongado requieren campañas reales en Samsung A15 y Honor X5C. Una compilación exitosa no demuestra estabilidad térmica, ausencia de fallos JNI ni compatibilidad de todos los STEP de taller.
-
-### Implementación todavía simplificada
-
-- El descriptor visual es experimental y mucho más pequeño que ORB/SIFT.
-- El grafo global propaga poses y verifica ciclos, pero todavía no ejecuta optimización no lineal de pose graph ni bundle adjustment local/global.
-- La IMU y el recorrido por sectores se usan como prior; no deben considerarse verdad geométrica.
-- La incertidumbre reportada no constituye una cadena metrológica calibrada.
-- El ajuste cilíndrico no reemplaza una medición física ni una inspección dimensional.
-
-### No validado para metrología industrial
-
-La aplicación es una alpha de ingeniería. No debe usarse para liberar dimensionalmente una polea hasta completar ensayos físicos de repetibilidad, comparación contra patrones trazables, análisis de incertidumbre y validación en los teléfonos objetivo.
-
-## Compatibilidad de compilación
+## Compatibilidad
 
 - `compileSdk 35`
 - `targetSdk 35`
 - `minSdk 24`
 - ABI actual: `arm64-v8a`
-- `armeabi-v7a` permanece pendiente porque el AAR OCCT actual no contiene esa ABI.
+- Versión: `0.18.0-alpha24`
 
 ## Compilar
 
@@ -78,22 +95,22 @@ APK esperada:
 PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Validación
+## Validación automática
 
-El workflow `.github/workflows/build-pulley-mvp-apk.yml` ejecuta las pruebas puras, verifica el hash del AAR, compila la APK y audita el cierre nativo incluido. Los detalles y límites de alpha20 se registran en `TECHNICAL_VALIDATION_0.18.0-alpha20.md`.
+El workflow `.github/workflows/build-pulley-mvp-apk.yml` ejecuta los gates Java, verifica el AAR, compila la APK y audita el cierre OCCT. Alpha24 incorpora 23 gates previos a la publicación del artefacto.
 
-## Roadmap e historial de iteraciones
+## Roadmap e historial
 
-- Roadmap profesional: `docs/ROADMAP_ENGINEERING.md`.
-- Estado actual y siguiente iteración: `docs/iterations/CURRENT.md`.
-- Historial inmutable: `docs/iterations/history/`.
-- Plantilla obligatoria: `docs/iterations/ITERATION_TEMPLATE.md`.
-- Reglas del proceso: `docs/iterations/README.md`.
+- Roadmap: `docs/ROADMAP_ENGINEERING.md`.
+- Estado y avance: `docs/iterations/CURRENT.md`.
+- Historial: `docs/iterations/history/`.
+- Última cerrada: `ITER-006_2026-07-21_local-bundle-adjustment-camera-profiles.md`.
+- Siguiente: `ITER-007 — Integración runtime del safety gate y BA local`.
 
-Antes de cerrar una iteración debe ejecutarse:
+Antes de cerrar una iteración:
 
 ```bash
 python3 PulleyKnowledgeMvp/tools/validate_iteration_history.py
 ```
 
-GitHub Actions también ejecuta esta validación mediante `.github/workflows/validate-iteration-history.yml`. Una iteración no se considera cerrada si no conserva sus resultados, riesgos y la siguiente iteración obligatoria.
+GitHub Actions también aplica esta validación. Una iteración no se considera cerrada si no conserva resultados, riesgos, deuda y la siguiente iteración obligatoria.
