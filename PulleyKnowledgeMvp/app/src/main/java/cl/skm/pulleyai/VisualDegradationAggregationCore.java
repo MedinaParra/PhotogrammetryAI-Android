@@ -85,11 +85,7 @@ public final class VisualDegradationAggregationCore {
             this.evidenceGaps = Collections.unmodifiableList(new ArrayList<String>(evidenceGaps));
         }
 
-        public PhotogrammetrySafetyGateAdapter.SupplementalMetrics supplemental(double homographyDominanceRatio) {
-            return new PhotogrammetrySafetyGateAdapter.SupplementalMetrics(
-                    homographyDominanceRatio, blurryFrameFraction,
-                    reflectiveFrameFraction, repetitiveAmbiguityFraction);
-        }
+        public boolean complete() { return evidenceGaps.isEmpty(); }
     }
 
     private static boolean fraction(double value) {
