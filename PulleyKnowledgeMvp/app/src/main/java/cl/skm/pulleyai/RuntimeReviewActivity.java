@@ -14,14 +14,17 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 
-/** Runs real supplemental metrics, safety gate, bounded BA and runtime evidence. */
+/** Runs real safety metrics and bounded BA with shared preparation, timeout and safe cancellation. */
 public final class RuntimeReviewActivity extends Activity {
     public static final String EXTRA_SESSION_ID = "runtime_session_id";
+    private static final long RUNTIME_BUDGET_MS = 180_000L;
 
     private CaptureStore store;
     private String sessionId;
     private TextView status;
     private Button runButton;
+    private Button cancelButton;
+    private volatile RuntimeExecutionControlCore.Token activeControl;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -31,6 +34,8 @@ public final class RuntimeReviewActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        RuntimeExecutionControlCore.Token control = activeControl;
+        if (control != null) control.cancel("ACTIVITY_DESTROYED");
         store.close();
         super.onDestroy();
     }
@@ -46,7 +51,7 @@ public final class RuntimeReviewActivity extends Activity {
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
         TextView subtitle = text(
-                "La sesión calcula homografía, degradación visual, safety gate y una ventana BA desde evidencia real. Solo un gate completo READY permite optimizar.",
+                "Frames, features e intrínsecos se preparan una vez. El proceso tiene 180 s de presupuesto; cancelar o excederlo conserva fallback sin optimizar.",
                 14, false);
         subtitle.setPadding(0, dp(5), 0, dp(15));
         root.addView(subtitle);
@@ -57,10 +62,17 @@ public final class RuntimeReviewActivity extends Activity {
         root.addView(status);
 
         runButton = new Button(this);
-        runButton.setText("EJECUTAR MÉTRICAS, SAFETY GATE, BA Y TELEMETRÍA");
+        runButton.setText("EJECUTAR VALIDACIÓN ACOTADA");
         runButton.setAllCaps(false);
         runButton.setOnClickListener(view -> runValidation());
         root.addView(runButton);
+
+        cancelButton = new Button(this);
+        cancelButton.setText("CANCELAR Y CONSERVAR FALLBACK");
+        cancelButton.setAllCaps(false);
+        cancelButton.setEnabled(false);
+        cancelButton.setOnClickListener(view -> requestCancellation());
+        root.addView(cancelButton);
 
         Button close = new Button(this);
         close.setText("VOLVER");
@@ -70,14 +82,28 @@ public final class RuntimeReviewActivity extends Activity {
         setContentView(root);
     }
 
+    private void requestCancellation() {
+        RuntimeExecutionControlCore.Token control = activeControl;
+        if (control == null) return;
+        control.cancel("USER_CANCELLED");
+        cancelButton.setEnabled(false);
+        status.setText("Cancelación solicitada. Se detendrá en el siguiente checkpoint y se conservará geometría sin optimizar.");
+        status.setTextColor(Color.rgb(145, 82, 0));
+    }
+
     private void runValidation() {
         if (sessionId == null || store.getSession(sessionId) == null) {
             status.setText("BLOCKED · no existe una sesión válida para analizar.");
             status.setTextColor(Color.rgb(150, 30, 30));
             return;
         }
+        final RuntimeExecutionControlCore.Token control =
+                RuntimeExecutionControlCore.start(RUNTIME_BUDGET_MS);
+        activeControl = control;
         runButton.setEnabled(false);
-        status.setText("Analizando correspondencias, degeneraciones y ventana BA…");
+        cancelButton.setEnabled(true);
+        status.setText("Preparando análisis acotado y diagnóstico automático…");
+
         final long startedAtEpochMs = System.currentTimeMillis();
         final long startedElapsedMs = SystemClock.elapsedRealtime();
         final long heapBefore = usedHeapBytes();
@@ -85,150 +111,207 @@ public final class RuntimeReviewActivity extends Activity {
         final long availableBefore = availableMemoryBytes();
         final long storage = store.sessionDir(sessionId).getUsableSpace();
 
-        new Thread(() -> {
-            long peakHeap = heapBefore;
-            long peakPss = pssBefore;
-            try {
-                SessionOverlapAnalyzer.Report report = SessionOverlapAnalyzer.analyze(store, sessionId);
-                peakHeap = Math.max(peakHeap, usedHeapBytes());
-                peakPss = Math.max(peakPss, Debug.getPss());
+        new Thread(() -> execute(control, startedAtEpochMs, startedElapsedMs,
+                heapBefore, pssBefore, availableBefore, storage), "RuntimeReview").start();
+    }
 
-                RuntimeSupplementalMetricsCore.Result supplemental =
-                        RuntimeSupplementalMetricsBuilder.build(store, sessionId, report);
-                RuntimeSupplementalMetricsBuilder.persist(store, sessionId, supplemental);
-                peakHeap = Math.max(peakHeap, usedHeapBytes());
-                peakPss = Math.max(peakPss, Debug.getPss());
+    private void execute(RuntimeExecutionControlCore.Token control,
+                         long startedAtEpochMs, long startedElapsedMs,
+                         long heapBefore, long pssBefore,
+                         long availableBefore, long storage) {
+        long peakHeap = heapBefore;
+        long peakPss = pssBefore;
+        SessionOverlapAnalyzer.Report report = null;
+        RuntimeSupplementalMetricsCore.Result supplemental = null;
+        RuntimeBundleWindowCore.Result window = RuntimeBundleWindowCore.Result.failed("NOT_BUILT");
+        RuntimeFramePreparationCache.Result cache = null;
+        File sessionDir = store.sessionDir(sessionId);
+        try {
+            control.checkpoint("SESSION_ANALYSIS_START");
+            report = SessionOverlapAnalyzer.analyze(store, sessionId);
+            control.checkpoint("SESSION_ANALYSIS_COMPLETE");
+            peakHeap = Math.max(peakHeap, usedHeapBytes());
+            peakPss = Math.max(peakPss, Debug.getPss());
 
-                RuntimeBundleWindowCore.Result window = RuntimeBundleWindowBuilder.build(
-                        RuntimeReviewActivity.this, store, sessionId, report);
-                peakHeap = Math.max(peakHeap, usedHeapBytes());
-                peakPss = Math.max(peakPss, Debug.getPss());
-                File sessionDir = store.sessionDir(sessionId);
-                write(new File(sessionDir, "runtime_ba_window.json"),
-                        RuntimeBundleWindowSerializer.canonicalJson(window));
+            cache = RuntimeFramePreparationCache.prepare(
+                    RuntimeReviewActivity.this, store, sessionId, report, control);
+            if (!cache.ready) throw new IllegalStateException(cache.status);
+            write(new File(sessionDir, "runtime_frame_cache.json"), cache.canonicalJson());
+            peakHeap = Math.max(peakHeap, usedHeapBytes());
+            peakPss = Math.max(peakPss, Debug.getPss());
 
-                boolean resources = storage >= 300L * 1024L * 1024L
-                        && availableBefore >= 256L * 1024L * 1024L;
-                PhotogrammetrySupplementalMetricsCore.Result metrics = supplemental.supplemental;
-                PhotogrammetrySafetyGateAdapter.SupplementalMetrics gateMetrics =
-                        new PhotogrammetrySafetyGateAdapter.SupplementalMetrics(
-                                metrics.homographyDominanceRatio,
-                                metrics.blurryFrameFraction,
-                                metrics.reflectiveFrameFraction,
-                                metrics.repetitiveAmbiguityFraction);
-                RuntimeReconstructionCoordinator.Outcome outcome =
-                        RuntimeReconstructionCoordinator.evaluate(
-                                RuntimeReviewActivity.this,
-                                sessionId,
-                                report,
-                                gateMetrics,
-                                window.ready ? window.problem : null,
-                                resources,
-                                false);
-                peakHeap = Math.max(peakHeap, usedHeapBytes());
-                peakPss = Math.max(peakPss, Debug.getPss());
+            supplemental = RuntimeSupplementalMetricsBuilder.build(cache, report, control);
+            RuntimeSupplementalMetricsBuilder.persist(store, sessionId, supplemental);
+            window = RuntimeBundleWindowBuilder.build(cache, report, control);
+            RuntimeBundleWindowBuilder.persist(store, sessionId, window);
+            peakHeap = Math.max(peakHeap, usedHeapBytes());
+            peakPss = Math.max(peakPss, Debug.getPss());
 
-                long heapAfter = usedHeapBytes();
-                long pssAfter = Debug.getPss();
-                peakHeap = Math.max(peakHeap, heapAfter);
-                peakPss = Math.max(peakPss, pssAfter);
-                RuntimeTelemetryCore.Record telemetryRecord = new RuntimeTelemetryCore.Record(
-                        startedAtEpochMs,
-                        Math.max(0L, SystemClock.elapsedRealtime() - startedElapsedMs),
-                        heapBefore, heapAfter, peakHeap,
-                        pssBefore, pssAfter, peakPss,
-                        availableBefore, availableMemoryBytes(), storage,
-                        window.ready, false, window.status,
-                        RuntimeBundleWindowSerializer.fingerprint(window),
-                        window.cameraCount, window.pointCount, window.observationCount,
-                        outcome.gate.state.name(), outcome.decision.state.name(),
-                        outcome.decision.reason, outcome.decision.baStatus);
-                RuntimeTelemetryCore.Result telemetry = RuntimeTelemetryCore.evaluate(telemetryRecord);
-                write(new File(sessionDir, "runtime_telemetry.json"), telemetry.canonicalJson());
-                write(new File(sessionDir, "runtime_audit.json"),
-                        auditJson(outcome, window, supplemental, telemetry));
+            DeviceDiagnosticsCore.Result diagnostics = AndroidDeviceDiagnosticsCollector.collect(this);
+            write(new File(sessionDir, "runtime_device_diagnostics.json"), diagnostics.canonicalJson());
+            boolean resources = storage >= 300L * 1024L * 1024L
+                    && availableBefore >= 256L * 1024L * 1024L;
+            control.checkpoint("BEFORE_BUNDLE_ADJUSTMENT");
 
-                runOnUiThread(() -> {
-                    runButton.setEnabled(true);
-                    status.setText(outcome.summary()
-                            + "\n\n" + supplemental.summary()
-                            + "\n" + window.summary()
-                            + "\n" + telemetry.summary()
-                            + "\n\nEvidencia runtime completa guardada en la sesión."
-                            + (!supplemental.complete()
-                            ? "\nLas métricas incompletas mantienen fallback y bloquean la optimización."
-                            : outcome.gate.state != PhotogrammetrySafetyGateCore.State.READY
-                            ? "\nLa evidencia está completa, pero una degeneración o calidad insuficiente impide el BA."
-                            : ""));
-                    status.setTextColor(outcome.decision.canPublishOptimizedGeometry()
-                            ? Color.rgb(25, 108, 65)
-                            : outcome.decision.useUnoptimizedFallback
-                            ? Color.rgb(145, 82, 0)
-                            : Color.rgb(150, 30, 30));
-                });
-            } catch (Exception error) {
-                final String message = error.getMessage() == null
-                        ? error.getClass().getSimpleName() : error.getMessage();
-                runOnUiThread(() -> {
-                    runButton.setEnabled(true);
-                    status.setText("BLOCKED · " + message);
-                    status.setTextColor(Color.rgb(150, 30, 30));
-                });
+            PhotogrammetrySupplementalMetricsCore.Result metrics = supplemental.supplemental;
+            PhotogrammetrySafetyGateAdapter.SupplementalMetrics gateMetrics =
+                    new PhotogrammetrySafetyGateAdapter.SupplementalMetrics(
+                            metrics.homographyDominanceRatio, metrics.blurryFrameFraction,
+                            metrics.reflectiveFrameFraction, metrics.repetitiveAmbiguityFraction);
+            RuntimeReconstructionCoordinator.Outcome outcome =
+                    RuntimeReconstructionCoordinator.evaluate(
+                            this, sessionId, report, gateMetrics,
+                            window.ready ? window.problem : null, resources, false);
+
+            long heapAfter = usedHeapBytes();
+            long pssAfter = Debug.getPss();
+            peakHeap = Math.max(peakHeap, heapAfter);
+            peakPss = Math.max(peakPss, pssAfter);
+            RuntimeTelemetryCore.Result telemetry = telemetry(startedAtEpochMs, startedElapsedMs,
+                    heapBefore, heapAfter, peakHeap, pssBefore, pssAfter, peakPss,
+                    availableBefore, storage, window, false, outcome);
+            write(new File(sessionDir, "runtime_telemetry.json"), telemetry.canonicalJson());
+            write(new File(sessionDir, "runtime_audit.json"),
+                    auditJson(outcome, window, cache, supplemental, diagnostics, telemetry, control));
+
+            final String summary = outcome.summary() + "\n\n" + cache.summary()
+                    + "\n" + supplemental.summary() + "\n" + window.summary()
+                    + "\n" + diagnostics.summary() + "\n" + telemetry.summary()
+                    + "\n\nEvidencia runtime guardada en la sesión.";
+            runOnUiThread(() -> showCompleted(summary, outcome.decision.canPublishOptimizedGeometry(),
+                    outcome.decision.useUnoptimizedFallback));
+        } catch (RuntimeExecutionControlCore.AbortedException aborted) {
+            handleAbort(aborted, control, report, supplemental, window, cache,
+                    startedAtEpochMs, startedElapsedMs, heapBefore, pssBefore,
+                    peakHeap, peakPss, availableBefore, storage, sessionDir);
+        } catch (Exception error) {
+            final String message = error.getMessage() == null
+                    ? error.getClass().getSimpleName() : error.getMessage();
+            runOnUiThread(() -> showFailure("BLOCKED · " + message));
+        } finally {
+            activeControl = null;
+        }
+    }
+
+    private void handleAbort(RuntimeExecutionControlCore.AbortedException aborted,
+                             RuntimeExecutionControlCore.Token control,
+                             SessionOverlapAnalyzer.Report report,
+                             RuntimeSupplementalMetricsCore.Result supplemental,
+                             RuntimeBundleWindowCore.Result window,
+                             RuntimeFramePreparationCache.Result cache,
+                             long startedAtEpochMs, long startedElapsedMs,
+                             long heapBefore, long pssBefore, long peakHeap, long peakPss,
+                             long availableBefore, long storage, File sessionDir) {
+        try {
+            DeviceDiagnosticsCore.Result diagnostics = AndroidDeviceDiagnosticsCollector.collect(this);
+            write(new File(sessionDir, "runtime_device_diagnostics.json"), diagnostics.canonicalJson());
+            write(new File(sessionDir, "runtime_abort.json"),
+                    "{\"schema\":\"skm-runtime-abort/1\",\"state\":\"" + aborted.state
+                            + "\",\"reason\":\"" + escape(aborted.reason)
+                            + "\",\"stage\":\"" + escape(aborted.stage)
+                            + "\",\"fallbackUnoptimized\":true,\"optimizedGeometryAccepted\":false}");
+            RuntimeReconstructionCoordinator.Outcome fallback = null;
+            if (report != null) {
+                PhotogrammetrySafetyGateAdapter.SupplementalMetrics metrics = supplemental == null
+                        ? PhotogrammetrySafetyGateAdapter.SupplementalMetrics.unknown()
+                        : supplemental.toSafetyGate();
+                fallback = RuntimeReconstructionCoordinator.evaluate(
+                        this, sessionId, report, metrics, null, false, true);
             }
-        }, "RuntimeReview").start();
+            long heapAfter = usedHeapBytes(), pssAfter = Debug.getPss();
+            RuntimeTelemetryCore.Result telemetry = telemetry(startedAtEpochMs, startedElapsedMs,
+                    heapBefore, heapAfter, Math.max(peakHeap, heapAfter),
+                    pssBefore, pssAfter, Math.max(peakPss, pssAfter), availableBefore,
+                    storage, window, true, fallback);
+            write(new File(sessionDir, "runtime_telemetry.json"), telemetry.canonicalJson());
+        } catch (Exception ignored) {
+            // The UI still reports fail-closed even if secondary evidence persistence fails.
+        }
+        final String message = "REVIEW · " + aborted.reason + " @ " + aborted.stage
+                + "\nFALLBACK SIN OPTIMIZAR · no se acepta geometría BA.";
+        runOnUiThread(() -> showCompleted(message, false, true));
+    }
+
+    private RuntimeTelemetryCore.Result telemetry(long startedAtEpochMs, long startedElapsedMs,
+                                                   long heapBefore, long heapAfter, long peakHeap,
+                                                   long pssBefore, long pssAfter, long peakPss,
+                                                   long availableBefore, long storage,
+                                                   RuntimeBundleWindowCore.Result window,
+                                                   boolean interrupted,
+                                                   RuntimeReconstructionCoordinator.Outcome outcome) {
+        RuntimeTelemetryCore.Record record = new RuntimeTelemetryCore.Record(
+                startedAtEpochMs, Math.max(0L, SystemClock.elapsedRealtime() - startedElapsedMs),
+                heapBefore, heapAfter, peakHeap, pssBefore, pssAfter, peakPss,
+                availableBefore, availableMemoryBytes(), storage,
+                window != null && window.ready, interrupted,
+                window == null ? "NOT_BUILT" : window.status,
+                window == null ? "" : RuntimeBundleWindowSerializer.fingerprint(window),
+                window == null ? 0 : window.cameraCount,
+                window == null ? 0 : window.pointCount,
+                window == null ? 0 : window.observationCount,
+                outcome == null ? "NOT_EVALUATED" : outcome.gate.state.name(),
+                outcome == null ? "REVIEW" : outcome.decision.state.name(),
+                outcome == null ? "OPTIMIZATION_INTERRUPTED" : outcome.decision.reason,
+                outcome == null ? "NOT_RUN" : outcome.decision.baStatus);
+        return RuntimeTelemetryCore.evaluate(record);
     }
 
     private static String auditJson(RuntimeReconstructionCoordinator.Outcome outcome,
                                     RuntimeBundleWindowCore.Result window,
+                                    RuntimeFramePreparationCache.Result cache,
                                     RuntimeSupplementalMetricsCore.Result supplemental,
-                                    RuntimeTelemetryCore.Result telemetry) {
-        return "{\n\"schema\":\"skm-runtime-audit/2\""
+                                    DeviceDiagnosticsCore.Result diagnostics,
+                                    RuntimeTelemetryCore.Result telemetry,
+                                    RuntimeExecutionControlCore.Token control) {
+        return "{\n\"schema\":\"skm-runtime-audit/3\""
                 + ",\n\"auditId\":" + outcome.auditId
+                + ",\n\"cacheStatus\":\"" + escape(cache.status) + "\""
+                + ",\n\"decodePasses\":" + cache.decodePasses
                 + ",\n\"supplementalStatus\":\"" + escape(supplemental.status) + "\""
-                + ",\n\"supplementalComplete\":" + supplemental.complete()
                 + ",\n\"gateState\":\"" + outcome.gate.state + "\""
-                + ",\n\"gateQuality\":" + outcome.gate.qualityScore
                 + ",\n\"decisionState\":\"" + outcome.decision.state + "\""
                 + ",\n\"decisionReason\":\"" + escape(outcome.decision.reason) + "\""
-                + ",\n\"baStatus\":\"" + escape(outcome.decision.baStatus) + "\""
                 + ",\n\"optimized\":" + outcome.decision.useOptimizedGeometry
                 + ",\n\"fallback\":" + outcome.decision.useUnoptimizedFallback
                 + ",\n\"windowStatus\":\"" + escape(window.status) + "\""
-                + ",\n\"windowSha256\":\"" + RuntimeBundleWindowSerializer.fingerprint(window) + "\""
+                + ",\n\"diagnosticsState\":\"" + diagnostics.state + "\""
                 + ",\n\"telemetryState\":\"" + telemetry.state + "\""
-                + ",\n\"telemetryReason\":\"" + escape(telemetry.reason) + "\"\n}";
+                + ",\n\"controlState\":\"" + control.state() + "\"\n}";
     }
 
+    private void showCompleted(String message, boolean optimized, boolean fallback) {
+        runButton.setEnabled(true); cancelButton.setEnabled(false);
+        status.setText(message);
+        status.setTextColor(optimized ? Color.rgb(25, 108, 65)
+                : fallback ? Color.rgb(145, 82, 0) : Color.rgb(150, 30, 30));
+    }
+    private void showFailure(String message) {
+        runButton.setEnabled(true); cancelButton.setEnabled(false);
+        status.setText(message); status.setTextColor(Color.rgb(150, 30, 30));
+    }
     private static void write(File target, String content) throws Exception {
         try (FileOutputStream output = new FileOutputStream(target)) {
             output.write(content.getBytes(StandardCharsets.UTF_8));
         }
     }
-
     private static long usedHeapBytes() {
         Runtime runtime = Runtime.getRuntime();
         return Math.max(0L, runtime.totalMemory() - runtime.freeMemory());
     }
-
     private static long availableMemoryBytes() {
         Runtime runtime = Runtime.getRuntime();
         return Math.max(0L, runtime.maxMemory() - usedHeapBytes());
     }
-
     private static String escape(String value) {
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r");
     }
-
     private TextView text(String value, int sp, boolean bold) {
         TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(sp);
-        view.setTextColor(Color.rgb(35, 39, 42));
+        view.setText(value); view.setTextSize(sp); view.setTextColor(Color.rgb(35, 39, 42));
         if (bold) view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         return view;
     }
-
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
