@@ -4,12 +4,12 @@
 **Rama:** `agent/photogrammetry-validation-alpha20`  
 **Base de producto:** `product/single-device-photogrammetry-v1`  
 **Actualizado:** 2026-07-21  
-**Última iteración cerrada:** `ITER-014`  
-**Siguiente iteración:** `ITER-015`  
-**Versión:** `0.18.0-alpha32`  
-**Avance integral estimado:** `86 %`
+**Última iteración cerrada:** `ITER-015`  
+**Siguiente iteración:** `ITER-016`  
+**Versión:** `0.18.0-alpha33`  
+**Avance integral estimado:** `89 %`
 
-> El avance integral representa madurez del producto alpha respecto del roadmap funcional, no el promedio aritmético de las fases. La preparación industrial/metrológica permanece en 20 %.
+> El avance integral representa madurez del producto alpha respecto del roadmap funcional, no el promedio aritmético de las fases. La preparación industrial/metrológica permanece en 22 %.
 
 ## 1. Propósito del producto
 
@@ -38,6 +38,8 @@ La aplicación sigue siendo una alpha de ingeniería. No está autorizada para l
 - Un perfil de cámara no es calibración hasta ser validado con patrón físico.
 - Todo optimizador declara alcance, gauge, priors, límites y métricas antes/después.
 - Cancelación, timeout o evidencia parcial nunca pueden publicar geometría optimizada.
+- Solo una generación comprometida puede considerarse vigente.
+- Una huella SHA-256 reproducible no equivale a firma digital ni aprobación técnica.
 - Temperatura de batería y estado térmico Android son diagnósticos, no metrología térmica.
 
 ## 3. Regla dimensional de identificación
@@ -79,13 +81,16 @@ Cada decisión conserva observaciones, referencias, residuos, tolerancias, fuent
 ```text
 CaptureStore
 → SessionOverlapAnalyzer
+  → VisualFeatureCore + checkpoints profundos
 → RuntimeFramePreparationCache
 ├── RuntimeSupplementalMetricsBuilder
 └── RuntimeBundleWindowBuilder
 → PhotogrammetrySafetyGate
 → LocalBundleAdjustmentCore (solo READY)
 → RuntimeReconstructionDecision
-→ auditoría / telemetría / diagnóstico / ZIP
+→ RuntimeEvidenceTransactionCore
+→ generación .committed + puntero activo
+→ SessionPackageExporter
 ```
 
 Límites BA:
@@ -94,7 +99,7 @@ Límites BA:
 - 120 puntos;
 - 1500 observaciones;
 - cámara global 0 fija;
-- rotaciones e intrínsecos fijos;
+- rotaciones e intrínsecos todavía fijos;
 - pérdida Huber y priors de traslación.
 
 ## 5. Estado técnico comprobado
@@ -104,23 +109,29 @@ Límites BA:
 - captura Camera2 horizontal, sesiones SQLite, IMU, calidad y SHA-256;
 - selección balanceada de hasta 48 frames y presupuesto de recursos;
 - features, matching, fundamental, esencial, pose, triangulación y tracks;
+- checkpoints de cancelación dentro de detección Harris y matching;
 - pose graph experimental, nube dispersa, cilindro y escala métrica condicionada;
 - competencia homografía/fundamental y degradación visual por sesión;
 - safety gate fail-closed `READY/REVIEW/BLOCKED` conectado al runtime;
 - ventana BA desde cámaras, puntos, tracks y píxeles reales;
 - BA local acotado y fallback explícito;
-- preparación post-reporte compartida entre métricas y ventana BA;
+- preparación compartida entre métricas y ventana BA;
 - deadline monotónico de 180 s y cancelación visible;
+- generaciones runtime `.pending`/`.committed` con rollback y puntero activo;
+- generación `ABORTED` sin ventana BA parcial;
+- manifiesto de generación con ruta, tamaño y SHA-256;
+- manifiesto de campaña que vincula APK instalado, dispositivo, sesión, frames y runtime;
 - diagnóstico automático de batería, nivel térmico, PSS, heap, RAM y salidas nativas disponibles;
 - evidencia revisionada por OT/plano/revisión y auditoría append-only;
 - STEP/OCCT para `arm64-v8a`, teselación y ensamblaje rígido;
-- ZIP de sesión con manifest, fotos, reporte, métricas, ventana, telemetría, diagnóstico, aborto y auditoría;
-- 31 gates Java y compilación alpha32.
+- ZIP de sesión que exporta exclusivamente la generación comprometida activa;
+- 32 gates Java y compilación alpha33.
 
 ### Deuda crítica actual
 
-- `SessionOverlapAnalyzer` todavía no consulta cancelación dentro de sus bucles;
-- los archivos runtime no se promueven mediante transacción atómica;
+- fundamental, pose, triangulación y Bitmap decode no tienen checkpoints internos;
+- la promoción transaccional cubre filesystem, no una transacción coordinada con SQLite;
+- la huella de campaña no está firmada con una identidad corporativa;
 - no se optimizan rotaciones ni intrínsecos y no existe BA global;
 - no hay calibración física de Samsung A15 ni Honor X5C;
 - no se ejecutaron campañas reales de memoria, temperatura, JNI o repetibilidad;
@@ -132,11 +143,11 @@ Límites BA:
 
 ## 6. Fases del roadmap
 
-## R0 — Gobierno de evidencia y trazabilidad — 86 %
+## R0 — Gobierno de evidencia y trazabilidad — 92 %
 
-Completado: jerarquía de fuentes, historial inmutable, auditoría append-only, evidencia runtime exportable y fallos conservados.
+Completado: jerarquía de fuentes, historial inmutable, auditoría append-only, generaciones comprometidas, manifiestos SHA-256 y exportación sin mezcla de ejecuciones.
 
-Pendiente: hashes binarios reales de todos los documentos, firma del paquete y política formal de retención.
+Pendiente: hashes binarios reales de todos los documentos, firma corporativa y journal coordinado SQLite/filesystem.
 
 ## R1 — Modelo dimensional revisionado — 88 %
 
@@ -160,11 +171,11 @@ Completado: radio de 30 mm, cotas axiales, estados por dimensión, bloqueo de cr
 
 Pendiente: tolerancias por plano, migración visual completa y validación física.
 
-## R4 — Fotogrametría robusta para taller — 92 %
+## R4 — Fotogrametría robusta para taller — 94 %
 
-Completado: cobertura, correspondencias, geometría multivista, planaridad, degradación, pose graph, reproyección, gate runtime y evidencia exportada.
+Completado: cobertura, correspondencias, geometría multivista, planaridad, degradación, pose graph, reproyección, gate runtime, cancelación en features/matching y evidencia exportada.
 
-Pendiente: checkpoints profundos, banco real con ground truth y descriptor más robusto a rotación/escala/superficies industriales.
+Pendiente: checkpoints dentro de fundamental/pose/triangulación, banco real con ground truth y descriptor más robusto a rotación/escala/superficies industriales.
 
 ## R5 — Optimización y calibración — 72 %
 
@@ -172,16 +183,16 @@ Completado: ventana BA real, límites 8/120/1500, cámara 0 fija, puntos/traslac
 
 Pendiente: rotaciones, intrínsecos, BA global/Schur, calibración física e incertidumbre dimensional.
 
-## R6 — Robustez Android y dispositivos — 38 %
+## R6 — Robustez Android y dispositivos — 46 %
 
-Completado en software: deadline, cancelación visible, fallback, telemetría, PSS, memoria, diagnóstico térmico abstracto e historial nativo disponible.
+Completado en software: deadline, cancelación profunda parcial, fallback, telemetría, generaciones transaccionales, recuperación, PSS, memoria, diagnóstico térmico abstracto e historial nativo disponible.
 
 Pendiente físico:
 
 - Samsung A15;
 - Honor X5C;
 - sesiones de 30–50 fotos;
-- cierre forzado y recuperación;
+- cierre forzado y recuperación real;
 - STEP/JNI y BA reales;
 - Android 10–15;
 - medición térmica externa.
@@ -192,15 +203,14 @@ Disponible: importación OCCT/JNI, BRep, teselación, bounding box, normales, tr
 
 Pendiente: grandes conjuntos reales, unidades/orientaciones diversas, memoria/JNI en dispositivo, componentes de taller y factibilidad `armeabi-v7a`.
 
-## R8 — Calificación de ingeniería — 5 %
+## R8 — Calificación de ingeniería — 8 %
 
-Disponible: estructura fail-closed, esquema de campaña y diagnóstico automático inicial.
+Disponible: estructura fail-closed, esquema de campaña, diagnóstico automático y manifiesto reproducible sin firma.
 
 Pendiente: repetibilidad, reproducibilidad, instrumentos trazables, incertidumbre, criterios por uso, revisión de calidad y versión calificada.
 
 ### Iteraciones cerradas recientes
 
-- ITER-007: integración runtime del safety gate y fallback BA.
 - ITER-008: productores de degeneración visual.
 - ITER-009: refinamiento acotado del pose graph.
 - ITER-010: gate de calificación profesional.
@@ -208,6 +218,7 @@ Pendiente: repetibilidad, reproducibilidad, instrumentos trazables, incertidumbr
 - ITER-012: ventana BA y telemetría automática.
 - ITER-013: métricas suplementarias y BA admitido.
 - ITER-014: caché compartida, cancelación y diagnóstico automático.
+- ITER-015: cancelación profunda parcial, recuperación transaccional y manifiesto reproducible.
 
 Los registros completos están en `docs/iterations/history/`.
 
@@ -236,26 +247,26 @@ Una iteración no se considera cerrada sin CI, historial y siguiente paso.
 
 ## 9. Próxima iteración obligatoria
 
-### ITER-015 — Checkpoints profundos, recuperación transaccional y campaña reproducible
+### ITER-016 — Rotaciones BA acotadas e incertidumbre estadística
 
 Objetivos:
 
-1. introducir un token de control en `SessionOverlapAnalyzer`;
-2. consultar checkpoints durante selección, decodificación y bucles de pares;
-3. abortar antes de fundamental, pose y triangulación cuando corresponda;
-4. escribir resultados runtime en temporales y promoverlos atómicamente;
-5. invalidar evidencia parcial de ejecuciones canceladas;
-6. generar manifiesto de campaña con APK, dispositivo, sesión, hashes y diagnóstico;
-7. probar cancelación durante análisis, recuperación y nueva ejecución;
-8. publicar `0.18.0-alpha33`.
+1. agregar parámetros de rotación de pequeña amplitud a cámaras distintas de la cámara 0;
+2. mantener gauge fijo, límites 8/120/1500 y rotación de referencia inmutable;
+3. incorporar damping y priors rotacionales;
+4. rechazar soluciones que empeoren reproyección, profundidad o coherencia del pose graph;
+5. estimar dispersión, percentiles e intervalos estadísticos de residuos;
+6. etiquetar esos intervalos como estadísticos, no metrológicos;
+7. probar convergencia, degeneración, outliers y fallback;
+8. publicar `0.18.0-alpha34`.
 
 Criterios de cierre:
 
-- cancelación observada dentro del analizador multivista;
-- timeout no espera al fin del análisis completo;
-- ningún archivo parcial se presenta como vigente;
-- recuperación transaccional probada;
-- manifiesto reproducible exportado;
-- 32 gates o más en `success`;
+- rotaciones acotadas incorporadas al BA local;
+- cámara 0 y gauge verificados;
+- aceptación exige mejora geométrica integral;
+- intervalos estadísticos no se presentan como incertidumbre trazable;
+- fallback por degeneración probado;
+- 33 gates o más en `success`;
 - Gradle, APK y cierre OCCT aprobados;
-- ITER-015 archivada e ITER-016 declarada.
+- ITER-016 archivada e ITER-017 declarada.
