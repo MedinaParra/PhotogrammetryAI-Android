@@ -43,7 +43,7 @@ public final class VisualFeatureCore {
         boolean[] selectedCandidate = new boolean[candidates.size()];
         List<Feature> features = new ArrayList<Feature>();
 
-        // First pass: reserve capacity across the image so a textured patch cannot monopolize the set.
+        // Reserve capacity across the image so a textured patch cannot monopolize the set.
         for (int i = 0; i < candidates.size() && features.size() < limit; i++) {
             Candidate candidate = candidates.get(i);
             int cell = cell(candidate.x, candidate.y, width, height, DETECTION_GRID_X, DETECTION_GRID_Y);
@@ -54,7 +54,7 @@ public final class VisualFeatureCore {
             selectedCandidate[i] = true;
         }
 
-        // Second pass: fill unused capacity without discarding legitimate detail in textured regions.
+        // Fill unused capacity without discarding legitimate detail in textured regions.
         for (int i = 0; i < candidates.size() && features.size() < limit; i++) {
             if (selectedCandidate[i]) continue;
             Candidate candidate = candidates.get(i);
@@ -72,7 +72,7 @@ public final class VisualFeatureCore {
     public static PairResult match(FeatureSet left, FeatureSet right) {
         if (left == null || right == null || left.features.isEmpty() || right.features.isEmpty()) {
             return new PairResult(Collections.<Match>emptyList(), 0.0, 0.0,
-                    0, 0.0, 0, "NO_FEATURES");
+                    0, 0.0, 0, 0.0, "NO_FEATURES");
         }
         int[] leftBestForRight = new int[right.features.size()];
         for (int j = 0; j < right.features.size(); j++) {
@@ -100,9 +100,13 @@ public final class VisualFeatureCore {
         }
         double coverage = matchCoverage(matches, left, right);
         int occupiedCells = (int) Math.round(coverage * MATCH_GRID_X * MATCH_GRID_Y);
-        String status = matches.size() >= 28 && coverage >= 0.33 ? "STRONG"
-                : matches.size() >= 12 && coverage >= 0.17 ? "USABLE" : "WEAK";
-        return new PairResult(matches, dx, dy, occupiedCells, coverage, coherent, status);
+        double coherenceRatio = matches.isEmpty() ? 0.0 : coherent / (double) matches.size();
+        String status = matches.size() >= 28 && coverage >= 0.33
+                && coherent >= 20 && coherenceRatio >= 0.45 ? "STRONG"
+                : matches.size() >= 12 && coverage >= 0.17
+                && coherent >= 8 && coherenceRatio >= 0.30 ? "USABLE" : "WEAK";
+        return new PairResult(matches, dx, dy, occupiedCells, coverage,
+                coherent, coherenceRatio, status);
     }
 
     private static Best best(Feature query, List<Feature> candidates) {
@@ -299,16 +303,19 @@ public final class VisualFeatureCore {
         public final int occupiedGridCells;
         public final double spatialCoverage;
         public final int translationCoherentMatches;
+        public final double translationCoherenceRatio;
         public final String status;
         PairResult(List<Match> matches, double medianDx, double medianDy,
                    int occupiedGridCells, double spatialCoverage,
-                   int translationCoherentMatches, String status) {
+                   int translationCoherentMatches, double translationCoherenceRatio,
+                   String status) {
             this.matches = Collections.unmodifiableList(new ArrayList<Match>(matches));
             this.medianDx = medianDx;
             this.medianDy = medianDy;
             this.occupiedGridCells = occupiedGridCells;
             this.spatialCoverage = spatialCoverage;
             this.translationCoherentMatches = translationCoherentMatches;
+            this.translationCoherenceRatio = translationCoherenceRatio;
             this.status = status;
         }
     }
