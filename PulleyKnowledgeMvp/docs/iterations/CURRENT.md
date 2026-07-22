@@ -45,10 +45,12 @@ Registro: `history/ITER-022_2026-07-22_persistent-target-lock-graph-bridge-remed
 - contraluz severo bloqueado;
 - continuidad y métricas visibles por fotografía;
 - plan de puente para grafo desconectado o falta de cruces entre anillos;
-- producto run `#817`: `success`;
+- producto run final `#821`: `success`;
+- historial run final `#307`: `success`;
 - 39 gates Java;
 - Gradle y cierre OCCT aprobados;
-- APK alpha44 publicada;
+- APK alpha44 publicada desde `f82cd98475549058073b0e3c944c1d18cb720760`;
+- APK SHA-256 `bed51328cb9ab2ee3e6f0e92d196be6dfb759998515b32c91f123d0584dd98b7`;
 - uso industrial continúa bloqueado.
 
 ## Bloqueos activos
