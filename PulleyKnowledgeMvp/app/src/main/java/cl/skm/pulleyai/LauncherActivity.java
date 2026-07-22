@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.widget.Button;
@@ -14,15 +15,21 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.util.List;
 import java.util.Locale;
 
 /** Single product entry point for capture, reconstruction, CAD assembly and native STEP. */
 public final class LauncherActivity extends Activity {
+    private static final int EXPORT_DOCUMENT = 4310;
+
     private CaptureStore captureStore;
     private RevisionedKnowledgeOpenHelper revisionedKnowledge;
     private TextView stateView;
     private LinearLayout recentContainer;
+    private File pendingExport;
+    private boolean exportInProgress;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -73,6 +80,10 @@ public final class LauncherActivity extends Activity {
             else openCapture(session.id);
         });
         root.addView(resume);
+
+        Button export = button("EXPORTAR ÚLTIMA SESIÓN (ZIP)");
+        export.setOnClickListener(view -> exportSession(latestSessionId()));
+        root.addView(export);
 
         Button runtime = button("VALIDACIÓN RUNTIME / SAFETY GATE");
         runtime.setOnClickListener(view -> openRuntimeReview(latestSessionId()));
@@ -177,6 +188,59 @@ public final class LauncherActivity extends Activity {
         startActivity(intent);
     }
 
+    private void exportSession(String sessionId) {
+        if (exportInProgress) {
+            Toast.makeText(this, "Ya se está construyendo un paquete.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (sessionId == null || "standalone".equals(sessionId) || captureStore.getSession(sessionId) == null) {
+            Toast.makeText(this, "No existe una sesión para exportar.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        exportInProgress = true;
+        Toast.makeText(this, "Construyendo ZIP auditable…", Toast.LENGTH_LONG).show();
+        new Thread(() -> {
+            try {
+                final File packageFile = SessionPackageExporter.build(LauncherActivity.this, captureStore, sessionId);
+                runOnUiThread(() -> {
+                    exportInProgress = false;
+                    pendingExport = packageFile;
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("application/zip");
+                    intent.putExtra(Intent.EXTRA_TITLE, packageFile.getName());
+                    startActivityForResult(intent, EXPORT_DOCUMENT);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    exportInProgress = false;
+                    String message = e.getMessage() == null ? "No se pudo construir el ZIP" : e.getMessage();
+                    Toast.makeText(LauncherActivity.this, message, Toast.LENGTH_LONG).show();
+                });
+            }
+        }, "PoleaLauncherSessionExport").start();
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != EXPORT_DOCUMENT || resultCode != RESULT_OK || data == null
+                || data.getData() == null || pendingExport == null) return;
+        Uri target = data.getData();
+        try (FileInputStream input = new FileInputStream(pendingExport);
+             java.io.OutputStream output = getContentResolver().openOutputStream(target, "w")) {
+            if (output == null) throw new IllegalStateException("No se pudo abrir el destino");
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
+            Toast.makeText(this, "ZIP exportado correctamente", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            String message = e.getMessage() == null ? "No se pudo guardar el ZIP" : e.getMessage();
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+        } finally {
+            pendingExport = null;
+        }
+    }
+
     private void refresh() {
         CaptureStore.Session open = captureStore.latestOpen();
         CadCoreStepImporter.Status core = CadCoreStepImporter.status(this);
@@ -227,6 +291,9 @@ public final class LauncherActivity extends Activity {
             stepButton.setOnClickListener(view -> openStepKernel(session.id));
             actions.addView(stepButton, new LinearLayout.LayoutParams(0, -2, 1f));
             card.addView(actions);
+            Button exportButton = button("EXPORTAR ESTA SESIÓN (ZIP)");
+            exportButton.setOnClickListener(view -> exportSession(session.id));
+            card.addView(exportButton);
             recentContainer.addView(card);
         }
     }
