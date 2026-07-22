@@ -3,89 +3,92 @@
 **Actualizado:** 2026-07-22  
 **Rama:** `agent/photogrammetry-validation-alpha20`  
 **PR activo:** `#8` — borrador  
-**Versión Android:** `0.18.0-alpha40`
+**Versión Android:** `0.18.0-alpha41`
 
 ## Estado acumulado
 
-- Alpha40 compila para `arm64-v8a` con STEP/OCCT.
+- Alpha41 compila para `arm64-v8a` con STEP/OCCT.
 - Evidencia dimensional, identificación, safety gate, pose graph y reconstrucción mantienen gates automáticos.
 - La ventana BA permanece limitada a 8 cámaras, 120 puntos y 1500 observaciones con cámara global 0 fija.
-- El BA base optimiza puntos y traslaciones con Huber y priors.
-- Las etapas rotacional y focal permanecen acotadas, observables y con fallback exacto.
-- La cámara 0, `cx`, `cy`, distorsión y razón `fx/fy` permanecen fijos.
-- La sensibilidad focal se etiqueta `EMPIRICAL_FOCAL_SENSITIVITY_NOT_CALIBRATION`.
-- Los residuos rotacionales se etiquetan `EMPIRICAL_RESIDUAL_INTERVAL_NOT_METROLOGICAL`.
+- Las etapas base, rotacional y focal permanecen acotadas y con fallback fail-closed.
 - RANSAC fundamental, SVD esencial, cheirality y triangulación DLT poseen checkpoints internos cooperativos.
-- Una cancelación o deadline dentro de geometría impide publicar resultados parciales.
-- La publicación runtime se registra en SQLite mediante fases `PREPARED`, `FILES_COMMITTED`, `POINTER_PUBLISHED`, `COMPLETE` y `ROLLED_BACK`.
-- Una carpeta comprometida puede recuperar su puntero después de una interrupción.
-- Una generación incompleta se revierte y no reemplaza a la generación activa anterior.
+- La publicación runtime usa journal SQLite recuperable y promoción protegida de puntero.
 - Antes de exportar se verifican rutas, tamaños, archivos listados y SHA-256.
-- No existe todavía campaña física completada ni calificación industrial.
+- Cada generación READY firma `campaign_evidence_manifest.json` mediante Ed25519.
+- StrongBox se intenta primero, luego Android Keystore y finalmente `SOFTWARE_APP_PRIVATE`.
+- El origen hardware/software se declara según el proveedor realmente obtenido.
+- Una ejecución READY exige autoverificación de firma local.
+- El exportador verifica nuevamente payload, firma y clave pública antes de crear el ZIP.
+- La firma usa `corporateIdentity=false` y `LOCAL_DEVICE_KEY_NOT_CORPORATE_IDENTITY`.
+- `runtime_execution_evidence.json` se genera automáticamente con `manualEntry=false`.
+- No existe todavía campaña física completada ni calificación industrial o metrológica.
 
 ## Avance global estimado
 
-- **Avance integral: 96 %.**
+- **Avance integral: 97 %.**
 - **Madurez alpha: 99 %.**
-- **Preparación industrial/metrológica: 25 %.**
+- **Preparación industrial/metrológica: 26 %.**
 
-El incremento corresponde a cancelación geométrica profunda y publicación recuperable. La preparación industrial no aumenta porque Samsung A15, Honor X5C, calibración física e instrumentos trazables no fueron ejecutados.
+El incremento corresponde a autenticidad local, verificación fail-closed y proveniencia automática. La preparación industrial aumenta solo marginalmente porque Samsung A15, Honor X5C, calibración física e instrumentos trazables todavía no fueron ejecutados.
 
 ## Iteración actual o última cerrada
 
-### ITER-019 — Checkpoints geométricos y journal coordinado
+### ITER-020 — Firma local verificable y evidencia automática de ejecución
 
-Registro: `history/ITER-019_2026-07-22_geometry-cancellation-publication-journal.md`
+Registro: `history/ITER-020_2026-07-22_local-signature-automatic-execution.md`
 
-- checkpoints dentro de RANSAC, scoring, normalización y Jacobi fundamental;
-- checkpoints dentro de SVD, candidatos de pose, cheirality y DLT esencial;
-- checkpoints dentro de triangulación dispersa;
-- journal SQLite independiente para publicación runtime;
-- protocolo de fases recuperables;
-- respaldo del puntero activo durante promoción;
-- recuperación de carpeta `.committed` probada;
-- rollback de generación incompleta probado;
-- producto run `#754`: `success`;
-- 36 gates Java;
+- firma Ed25519 sobre el manifiesto canónico de campaña;
+- SHA-256 del payload y clave pública X.509 incluidos;
+- intento StrongBox y Android Keystore;
+- fallback software app-private;
+- estado `UNAVAILABLE` explícito y no verificable;
+- `corporateIdentity=false` invariable;
+- evidencia automática de ejecución persistida;
+- exportación bloqueada ante payload, firma o clave incorrectos;
+- archivo `export_signature_verification.json` incluido en ZIP válido;
+- producto run `#774`: `success`;
+- 37 gates Java;
 - Gradle y cierre OCCT aprobados;
-- APK alpha40 publicada;
+- APK alpha41 publicada;
 - uso industrial continúa bloqueado.
 
 ## Bloqueos activos
 
-1. `RUNTIME-004`: `Bitmap` decode y algunas llamadas nativas no admiten checkpoint interno;
-2. `TX-002`: journal recuperable implementado, pero no existe una transacción ACID única SQLite/filesystem;
-3. `INTR-002`: observabilidad focal validada sintéticamente, no con cámaras físicas;
-4. `BA-003`: no existe BA global ni Schur complement;
-5. `STAT-001`: sensibilidad e intervalos no representan incertidumbre física o dimensional;
-6. `SIGN-001`: manifiestos sin firma corporativa ni atestación;
-7. `DEVICE-001`: campaña Samsung A15 no ejecutada;
-8. `DEVICE-002`: campaña Honor X5C no ejecutada;
-9. `VALID-001`: metrología trazable ausente;
-10. `DATA-007`: hashes reales de todos los PDF pendientes;
-11. `ABI-001`: OCCT solo `arm64-v8a`.
+1. `SIGN-002`: la clave local no representa identidad corporativa ni atestación remota;
+2. `KEY-001`: reinstalación o borrado de datos puede cambiar la identidad local de clave;
+3. `RUNTIME-004`: `Bitmap` decode y algunas llamadas nativas no admiten checkpoint interno;
+4. `TX-002`: journal recuperable, pero no transacción ACID única SQLite/filesystem;
+5. `INTR-002`: observabilidad focal validada sintéticamente, no en cámaras físicas;
+6. `BA-003`: no existe BA global ni Schur complement;
+7. `STAT-001`: sensibilidad e intervalos no representan incertidumbre física o dimensional;
+8. `DEVICE-001`: campaña Samsung A15 no ejecutada;
+9. `DEVICE-002`: campaña Honor X5C no ejecutada;
+10. `VALID-001`: metrología trazable ausente;
+11. `DATA-007`: hashes reales de todos los PDF pendientes;
+12. `ABI-001`: OCCT solo `arm64-v8a`.
 
 ## Siguiente iteración obligatoria
 
-### ITER-020 — Firma local verificable y evidencia automática de ejecución
+### ITER-021 — Calificación device-alpha con continuidad de clave
 
-Firmar el manifiesto canónico de cada generación, verificar payload/firma/clave antes de exportar, declarar si la clave es hardware-backed o software sin atribuir identidad corporativa y persistir evidencia automática para campañas device-alpha.
+Consumir únicamente generaciones automáticas con integridad y firma válidas; contar ejecuciones por modelo objetivo; exigir tres ejecuciones calificantes para Samsung A15 y Honor X5C; detectar cambios de clave y exigir rotación explícita; excluir registros manuales del conteo; mantener READY separado de calificación metrológica.
 
 ## Criterios de entrada
 
-- conservar los 36 gates acumulados;
-- mantener journal recuperable e integridad SHA-256 fail-closed;
-- mantener límites 8/120/1500 y cámara 0 fija;
+- conservar los 37 gates acumulados;
+- mantener journal, integridad SHA-256 y firma Ed25519 fail-closed;
+- mantener `corporateIdentity=false`;
+- conservar límites 8/120/1500 y cámara 0 fija;
 - no declarar campañas físicas no ejecutadas;
-- mantener `corporateIdentity=false` para claves locales;
 - mantener PR en borrador.
 
 ## Criterios de salida
 
-- firma local de manifiesto implementada;
-- payload, firma y clave alterados bloqueados;
-- hardware/software backing declarado sin suposiciones;
-- evidencia automática de ejecución persistida;
+- ingesta de generaciones firmadas implementada;
+- continuidad de clave verificada;
+- rotación de clave explícita y auditable;
+- tres ejecuciones automáticas por dispositivo exigidas;
+- evidencia manual excluida del conteo;
 - nueva alpha compilada;
 - CI producto e historial exitosos;
-- ITER-020 archivada.
+- ITER-021 archivada.
