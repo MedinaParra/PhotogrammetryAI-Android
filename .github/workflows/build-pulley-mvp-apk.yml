@@ -125,12 +125,12 @@ jobs:
         run: |
           set -o pipefail
           gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 | tee artifacts/gradle-build.log
-      - name: Upload Gradle diagnostic
+      - name: Upload alpha39 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: SKM-Polea-AI-alpha39-build-diagnostic
-          path: artifacts/gradle-build.log
+          path: artifacts/
           if-no-files-found: warn
           retention-days: 14
       - name: Verify pruned native STEP runtime packaging
