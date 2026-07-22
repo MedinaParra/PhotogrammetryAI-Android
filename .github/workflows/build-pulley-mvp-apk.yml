@@ -10,6 +10,7 @@ on:
     paths:
       - 'PulleyKnowledgeMvp/app/**'
       - 'PulleyKnowledgeMvp/tools/**'
+      - 'PulleyKnowledgeMvp/ci/**'
       - 'PulleyKnowledgeMvp/*.gradle'
       - 'PulleyKnowledgeMvp/gradle.properties'
       - '.github/workflows/build-pulley-mvp-apk.yml'
@@ -17,6 +18,7 @@ on:
     paths:
       - 'PulleyKnowledgeMvp/app/**'
       - 'PulleyKnowledgeMvp/tools/**'
+      - 'PulleyKnowledgeMvp/ci/**'
       - 'PulleyKnowledgeMvp/*.gradle'
       - 'PulleyKnowledgeMvp/gradle.properties'
       - '.github/workflows/build-pulley-mvp-apk.yml'
@@ -36,6 +38,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Prepare stable alpha lab signing
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/skm-alpha-signing" artifacts
+          KEYSTORE="$RUNNER_TEMP/skm-alpha-signing/skm-alpha-lab.jks"
+          base64 --decode PulleyKnowledgeMvp/ci/skm-alpha-lab.jks.b64 > "$KEYSTORE"
+          test "$(sha256sum "$KEYSTORE" | awk '{print $1}')" = "e0015f7a5e92d5e07cc5d2164405f1b841ce3670028828138e0280aa22426bf5"
+          chmod 600 "$KEYSTORE"
+          echo "SKM_ALPHA_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          printf 'SIGNING_MODE=PUBLIC_ALPHA_TEST_KEY\nSIGNING_KEYSTORE_SHA256=%s\nPRODUCTION_IDENTITY=false\n' \
+            "$(sha256sum "$KEYSTORE" | awk '{print $1}')" | tee artifacts/SIGNING_MODE.txt
       - name: Test capture core
         run: bash PulleyKnowledgeMvp/tools/run_capture_core_v26_tests.sh
       - name: Test scale and baseline core
@@ -116,6 +129,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_target_lock_bridge_remediation_v64_test.sh
       - name: Test accessible session ZIP export
         run: bash PulleyKnowledgeMvp/tools/run_accessible_session_export_v65_test.sh
+      - name: Test adaptive ZIP reprocessing and pair diagnostics
+        run: bash PulleyKnowledgeMvp/tools/run_zip_reprocessing_diagnostics_v66_test.sh
       - name: Fetch verified pruned STEP-enabled cadcore v2 release
         run: |
           set -euo pipefail
@@ -131,15 +146,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build STEP-enabled debug APK
+      - name: Build STEP-enabled alpha46 Lab APK
         run: |
           set -o pipefail
           gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 | tee artifacts/gradle-build.log
-      - name: Upload alpha45 diagnostics
+      - name: Upload alpha46 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha45-build-diagnostic
+          name: SKM-Polea-AI-alpha46-build-diagnostic
           path: artifacts/
           if-no-files-found: warn
           retention-days: 14
@@ -147,7 +162,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          CHECK="$RUNNER_TEMP/alpha45-apk"
+          CHECK="$RUNNER_TEMP/alpha46-apk"
           rm -rf "$CHECK" && mkdir -p "$CHECK"
           unzip -q "$APK" -d "$CHECK"
           test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
@@ -166,20 +181,26 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha45-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          manifest=json.loads(Path("${{ runner.temp }}/alpha46-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
           assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
           assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha45 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          print("alpha46 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
           PY
+      - name: Verify stable alpha test signature
+        run: |
+          set -euo pipefail
+          APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
+          keytool -printcert -jarfile "$APK" | tee artifacts/SIGNING_CERTIFICATE.txt
+          grep -q "SKM Polea AI Alpha Lab" artifacts/SIGNING_CERTIFICATE.txt
       - name: Prepare artifact
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha45.apk
-          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha45.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-Lab-CAD-STEP-v0.18.0-alpha46.apk
+          sha256sum artifacts/SKM-Polea-AI-Lab-CAD-STEP-v0.18.0-alpha46.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha45
+          name: SKM-Polea-AI-Lab-CAD-STEP-v0.18.0-alpha46
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
