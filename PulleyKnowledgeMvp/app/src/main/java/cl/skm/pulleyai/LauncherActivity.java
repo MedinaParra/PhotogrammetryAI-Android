@@ -26,6 +26,7 @@ public final class LauncherActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        RuntimePublicationJournalBridge.install(new RuntimePublicationJournalStore(this));
         captureStore = new CaptureStore(this);
         MainActivity.DbHelper knowledge = new MainActivity.DbHelper(this);
         KnowledgeArchivePatch.apply(knowledge);
@@ -184,7 +185,7 @@ public final class LauncherActivity extends Activity {
                 : "Captura abierta: " + open.label + " · " + open.accepted + " fotos aceptadas")
                 + "\nCAD: " + core.runtime
                 + (core.stepReady ? " · STEP NATIVO LISTO" : " · STEP pendiente")
-                + "\nRuntime: safety gate y campaña física disponibles"
+                + "\nRuntime: safety gate, journal recuperable y campaña física disponibles"
                 + (core.diagnostic == null || core.diagnostic.isEmpty() ? "" : "\n" + core.diagnostic));
         stateView.setTextColor(core.stepReady ? Color.rgb(25, 108, 65)
                 : open == null ? Color.rgb(35, 84, 117) : Color.rgb(145, 82, 0));
