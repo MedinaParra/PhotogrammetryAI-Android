@@ -13,7 +13,7 @@ import android.widget.TextView;
 import java.io.File;
 import java.util.List;
 
-/** Runs real safety metrics and bounded BA with deep cancellation and atomic evidence generations. */
+/** Runs real safety metrics and bounded BA with deep cancellation and signed evidence generations. */
 public final class RuntimeReviewActivity extends Activity {
     public static final String EXTRA_SESSION_ID = "runtime_session_id";
     private static final long RUNTIME_BUDGET_MS = 180_000L;
@@ -50,7 +50,7 @@ public final class RuntimeReviewActivity extends Activity {
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
         TextView subtitle = text(
-                "El análisis tiene 180 s de presupuesto, checkpoints profundos y BA acotado de puntos, traslaciones, rotaciones y focal. La cámara 0, el principal point y la distorsión permanecen fijos.",
+                "El análisis tiene 180 s de presupuesto, checkpoints profundos, evidencia automática y firma local Ed25519. La firma no representa identidad corporativa ni calibración metrológica.",
                 14, false);
         subtitle.setPadding(0, dp(5), 0, dp(15));
         root.addView(subtitle);
@@ -101,7 +101,7 @@ public final class RuntimeReviewActivity extends Activity {
         activeControl = control;
         runButton.setEnabled(false);
         cancelButton.setEnabled(true);
-        status.setText("Creando generación transaccional y ejecutando análisis acotado…");
+        status.setText("Creando generación transaccional, evidencia automática y firma local…");
 
         final long startedAtEpochMs = System.currentTimeMillis();
         final long startedElapsedMs = SystemClock.elapsedRealtime();
@@ -183,11 +183,18 @@ public final class RuntimeReviewActivity extends Activity {
             transaction.stageText("runtime_audit.json",
                     auditJson(outcome, window, cache, supplemental, diagnostics, telemetry, control));
 
+            RuntimeExecutionEvidenceCore.Result execution = executionEvidence(
+                    runId, outcome.decision.state.name(), startedAtEpochMs, startedElapsedMs,
+                    window, outcome, false, control.state().name());
+            if (!execution.complete) throw new IllegalStateException("AUTOMATIC_EXECUTION_EVIDENCE_INCOMPLETE");
+            transaction.stageText("runtime_execution_evidence.json", execution.canonicalJson);
+
             control.checkpoint("CAMPAIGN_MANIFEST");
             List<RuntimeEvidenceTransactionCore.Entry> entries = transaction.snapshotEntries();
             CampaignEvidenceManifestCore.Result manifest = CampaignEvidenceManifestBuilder.build(
                     this, store, sessionId, entries);
-            transaction.stageText("campaign_evidence_manifest.json", manifest.canonicalJson);
+            LocalEvidenceSignatureCore.Result signature = stageManifestAndSignature(
+                    transaction, manifest, true);
             control.checkpoint("GENERATION_COMMIT");
             RuntimeEvidenceTransactionCore.Result publication =
                     transaction.commit(outcome.decision.state.name());
@@ -196,8 +203,10 @@ public final class RuntimeReviewActivity extends Activity {
             final String summary = outcome.summary() + "\n\n" + cache.summary()
                     + "\n" + supplemental.summary() + "\n" + window.summary()
                     + "\n" + diagnostics.summary() + "\n" + telemetry.summary()
-                    + "\n" + manifest.summary() + "\n" + publication.summary()
+                    + "\n" + execution.summary() + "\n" + manifest.summary()
+                    + "\n" + signature.summary() + "\n" + publication.summary()
                     + "\n\nLos intervalos de residuos y la sensibilidad focal son estadísticos, no metrológicos ni una calibración física."
+                    + "\nLa firma es una clave local del dispositivo, no una identidad corporativa."
                     + "\nSolo esta generación comprometida queda vigente para exportación.";
             runOnUiThread(() -> showCompleted(summary,
                     outcome.decision.canPublishOptimizedGeometry(),
@@ -227,8 +236,8 @@ public final class RuntimeReviewActivity extends Activity {
                              long availableBefore, long storage, File sessionDir) {
         String publicationSummary = "Generación de aborto no persistida";
         try {
-            RuntimeEvidenceTransactionCore abort = new RuntimeEvidenceTransactionCore(
-                    sessionDir, "runtime-" + startedAtEpochMs + "-aborted");
+            String runId = "runtime-" + startedAtEpochMs + "-aborted";
+            RuntimeEvidenceTransactionCore abort = new RuntimeEvidenceTransactionCore(sessionDir, runId);
             DeviceDiagnosticsCore.Result diagnostics = AndroidDeviceDiagnosticsCollector.collect(this);
             abort.stageText("runtime_device_diagnostics.json", diagnostics.canonicalJson());
             RuntimeReconstructionCoordinator.Outcome fallback = null;
@@ -247,12 +256,17 @@ public final class RuntimeReviewActivity extends Activity {
                     storage, window, true, fallback);
             abort.stageText("runtime_telemetry.json", telemetry.canonicalJson());
             abort.stageText("runtime_abort.json", abortJson(aborted));
+            RuntimeExecutionEvidenceCore.Result execution = executionEvidence(
+                    runId, "ABORTED", startedAtEpochMs, startedElapsedMs,
+                    window, fallback, true, aborted.state.name());
+            abort.stageText("runtime_execution_evidence.json", execution.canonicalJson);
             List<RuntimeEvidenceTransactionCore.Entry> entries = abort.snapshotEntries();
             CampaignEvidenceManifestCore.Result manifest = CampaignEvidenceManifestBuilder.build(
                     this, store, sessionId, entries);
-            abort.stageText("campaign_evidence_manifest.json", manifest.canonicalJson);
+            LocalEvidenceSignatureCore.Result signature = stageManifestAndSignature(abort, manifest, false);
             RuntimeEvidenceTransactionCore.Result publication = abort.commit("ABORTED");
-            publicationSummary = publication.summary() + " · " + manifest.summary();
+            publicationSummary = publication.summary() + " · " + manifest.summary()
+                    + " · " + signature.summary();
         } catch (Exception ignored) {
             // UI remains fail-closed even when secondary persistence cannot complete.
         }
@@ -269,30 +283,73 @@ public final class RuntimeReviewActivity extends Activity {
         String message = error.getMessage() == null
                 ? error.getClass().getSimpleName() : error.getMessage();
         try {
-            RuntimeEvidenceTransactionCore failed = new RuntimeEvidenceTransactionCore(
-                    sessionDir, "runtime-" + startedAtEpochMs + "-blocked");
+            String runId = "runtime-" + startedAtEpochMs + "-blocked";
+            RuntimeEvidenceTransactionCore failed = new RuntimeEvidenceTransactionCore(sessionDir, runId);
             DeviceDiagnosticsCore.Result diagnostics = AndroidDeviceDiagnosticsCollector.collect(this);
             failed.stageText("runtime_device_diagnostics.json", diagnostics.canonicalJson());
+            RuntimeBundleWindowCore.Result failedWindow = RuntimeBundleWindowCore.Result.failed("ERROR");
             RuntimeTelemetryCore.Result telemetry = telemetry(startedAtEpochMs, startedElapsedMs,
                     heapBefore, usedHeapBytes(), Math.max(peakHeap, usedHeapBytes()),
                     pssBefore, Debug.getPss(), Math.max(peakPss, Debug.getPss()),
-                    availableBefore, storage, RuntimeBundleWindowCore.Result.failed("ERROR"),
-                    true, null);
+                    availableBefore, storage, failedWindow, true, null);
             failed.stageText("runtime_telemetry.json", telemetry.canonicalJson());
             failed.stageText("runtime_error.json", "{\"schema\":\"skm-runtime-error/1\","
                     + "\"message\":\"" + escape(message) + "\","
                     + "\"optimizedGeometryAccepted\":false}");
+            RuntimeExecutionEvidenceCore.Result execution = executionEvidence(
+                    runId, "BLOCKED", startedAtEpochMs, startedElapsedMs,
+                    failedWindow, null, true, "FAILED");
+            failed.stageText("runtime_execution_evidence.json", execution.canonicalJson);
             List<RuntimeEvidenceTransactionCore.Entry> entries = failed.snapshotEntries();
             CampaignEvidenceManifestCore.Result manifest = CampaignEvidenceManifestBuilder.build(
                     this, store, sessionId, entries);
-            failed.stageText("campaign_evidence_manifest.json", manifest.canonicalJson);
+            LocalEvidenceSignatureCore.Result signature = stageManifestAndSignature(failed, manifest, false);
             RuntimeEvidenceTransactionCore.Result publication = failed.commit("BLOCKED");
-            message += "\n" + publication.summary();
+            message += "\n" + publication.summary() + " · " + signature.summary();
         } catch (Exception ignored) {
             // The primary failure remains visible even when evidence publication fails.
         }
         final String finalMessage = "BLOCKED · " + message;
         runOnUiThread(() -> showFailure(finalMessage));
+    }
+
+    private LocalEvidenceSignatureCore.Result stageManifestAndSignature(
+            RuntimeEvidenceTransactionCore transaction,
+            CampaignEvidenceManifestCore.Result manifest,
+            boolean requireVerified) throws Exception {
+        transaction.stageText("campaign_evidence_manifest.json", manifest.canonicalJson);
+        LocalEvidenceSignatureCore.Result signature =
+                AndroidLocalEvidenceSigner.sign(this, manifest.canonicalJson);
+        transaction.stageText("campaign_evidence_signature.json", signature.canonicalJson);
+        if (requireVerified && !signature.verified) {
+            throw new IllegalStateException("LOCAL_ED25519_SIGNATURE_UNAVAILABLE:" + signature.reason);
+        }
+        return signature;
+    }
+
+    private RuntimeExecutionEvidenceCore.Result executionEvidence(
+            String runId, String publicationState,
+            long startedAtEpochMs, long startedElapsedMs,
+            RuntimeBundleWindowCore.Result window,
+            RuntimeReconstructionCoordinator.Outcome outcome,
+            boolean interrupted, String controlState) {
+        CaptureStore.Session session = store.getSession(sessionId);
+        long completedAtEpochMs = System.currentTimeMillis();
+        long durationMs = Math.max(0L, SystemClock.elapsedRealtime() - startedElapsedMs);
+        return RuntimeExecutionEvidenceCore.build(
+                sessionId, runId, publicationState, startedAtEpochMs, completedAtEpochMs,
+                durationMs, session == null ? 0 : session.accepted,
+                session == null ? 0 : session.rejected,
+                window == null ? "NOT_BUILT" : window.status,
+                window == null ? 0 : window.cameraCount,
+                window == null ? 0 : window.pointCount,
+                window == null ? 0 : window.observationCount,
+                outcome == null ? "NOT_EVALUATED" : outcome.gate.state.name(),
+                outcome == null ? publicationState : outcome.decision.state.name(),
+                outcome == null ? "NO_OUTCOME" : outcome.decision.reason,
+                outcome != null && outcome.decision.canPublishOptimizedGeometry(),
+                outcome == null || outcome.decision.useUnoptimizedFallback,
+                interrupted, controlState);
     }
 
     private static String abortJson(RuntimeExecutionControlCore.AbortedException aborted) {
@@ -345,7 +402,7 @@ public final class RuntimeReviewActivity extends Activity {
                                     RuntimeExecutionControlCore.Token control) {
         RotationalBundleAdjustmentCore.Result rotational = outcome.rotationalBundleAdjustment;
         ConditionedFocalBundleAdjustmentCore.Result focal = outcome.focalBundleAdjustment;
-        return "{\n\"schema\":\"skm-runtime-audit/6\""
+        return "{\n\"schema\":\"skm-runtime-audit/7\""
                 + ",\n\"auditId\":" + outcome.auditId
                 + ",\n\"cacheStatus\":\"" + escape(cache.status) + "\""
                 + ",\n\"decodePasses\":" + cache.decodePasses
@@ -372,6 +429,9 @@ public final class RuntimeReviewActivity extends Activity {
                 + (focal == null ? "null" : "\"" + focal.sensitivity.label + "\"")
                 + ",\n\"diagnosticsState\":\"" + diagnostics.state + "\""
                 + ",\n\"telemetryState\":\"" + telemetry.state + "\""
+                + ",\n\"automaticExecutionEvidence\":true"
+                + ",\n\"localSignatureRequiredForReady\":true"
+                + ",\n\"corporateIdentity\":false"
                 + ",\n\"controlState\":\"" + control.state() + "\"\n}";
     }
 
