@@ -36,7 +36,8 @@ Impedir que fotografías de otros tambores, fondos ambiguos o contraluz severo i
 
 ## Evidencia y validación
 
-- Producto run `#817`: **PASS**.
+- Producto run final `#820`: **PASS**.
+- Historial run `#305`: **PASS**.
 - 39 gates Java: **APROBADOS**.
 - Continuidad y serialización de firma: **APROBADO**.
 - Cambio de escena y contraluz sintético: bloqueados correctamente.
@@ -45,7 +46,8 @@ Impedir que fotografías de otros tambores, fondos ambiguos o contraluz severo i
 - Gradle: **APROBADO**.
 - AAR STEP verificado por SHA-256.
 - Cierre OCCT y 25 bibliotecas nativas: **APROBADOS**.
-- Artefacto `SKM-Polea-AI-CAD-STEP-v0.18.0-alpha44` publicado desde `1d86d576df4cbdf2a8c80ad81eeaacd2470e534c`.
+- Artefacto `SKM-Polea-AI-CAD-STEP-v0.18.0-alpha44` publicado desde `27fed47ecb91c5c297fffc542ea1783284871675`.
+- APK SHA-256: `8c897c44e4c9450cfb040198bc9d7cbcf04e0de51240de3b88fdacb098384a1d`.
 
 ## Resultados
 
