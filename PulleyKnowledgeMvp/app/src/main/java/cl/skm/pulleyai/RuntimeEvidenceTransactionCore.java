@@ -7,6 +7,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -14,10 +16,14 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-/** Publishes a complete runtime evidence generation by same-filesystem directory and pointer renames. */
+/** Publishes a complete runtime evidence generation with recoverable journal phases. */
 public final class RuntimeEvidenceTransactionCore {
     private static final String ROOT = "runtime-generations";
     private static final String POINTER = "runtime_active_generation.txt";
+    private static final Method JOURNAL_RECOVER = journalMethod("recover", File.class);
+    private static final Method JOURNAL_BEGIN = journalMethod("begin", File.class, String.class, String.class);
+    private static final Method JOURNAL_MARK = journalMethod("mark", File.class, String.class,
+            String.class, String.class, String.class, String.class);
 
     private final File sessionDir;
     private final File generationsDir;
@@ -33,6 +39,7 @@ public final class RuntimeEvidenceTransactionCore {
         if (!generationsDir.isDirectory() && !generationsDir.mkdirs()) {
             throw new IllegalStateException("cannot create runtime generation directory");
         }
+        journalRecover(sessionDir);
         cleanupPending(generationsDir);
         this.pendingDir = new File(generationsDir, runId + ".pending");
         deleteRecursively(pendingDir);
@@ -80,6 +87,7 @@ public final class RuntimeEvidenceTransactionCore {
     public Result commit(String state) throws Exception {
         ensureOpen();
         String normalizedState = clean(state, "COMMITTED");
+        journalBegin(sessionDir, runId, normalizedState);
         List<Entry> entries = snapshotEntries();
         stageText("generation_manifest.json", manifestJson(normalizedState, entries));
         File committed = new File(generationsDir, runId + ".committed");
@@ -87,16 +95,14 @@ public final class RuntimeEvidenceTransactionCore {
         if (!pendingDir.renameTo(committed)) {
             throw new IllegalStateException("generation directory promotion failed");
         }
-        File pointerTmp = new File(sessionDir, POINTER + ".tmp");
-        writeSynced(pointerTmp, committed.getName() + "\n");
-        File pointer = new File(sessionDir, POINTER);
-        if (pointer.exists() && !pointer.delete()) {
-            throw new IllegalStateException("old generation pointer cannot be removed");
-        }
-        if (!pointerTmp.renameTo(pointer)) {
-            throw new IllegalStateException("generation pointer promotion failed");
-        }
+        journalMark(sessionDir, runId, normalizedState, "FILES_COMMITTED",
+                committed.getName(), "DIRECTORY_PROMOTED");
+        publishActivePointer(sessionDir, committed.getName());
+        journalMark(sessionDir, runId, normalizedState, "POINTER_PUBLISHED",
+                committed.getName(), "POINTER_PROMOTED");
         closed = true;
+        journalMark(sessionDir, runId, normalizedState, "COMPLETE",
+                committed.getName(), "PUBLICATION_COMPLETE");
         return new Result(runId, normalizedState, committed, entries.size());
     }
 
@@ -121,7 +127,7 @@ public final class RuntimeEvidenceTransactionCore {
         File pointer = new File(sessionDir, POINTER);
         if (!pointer.isFile()) return null;
         String name = firstLine(pointer);
-        if (name == null || !name.endsWith(".committed") || name.contains("/") || name.contains("\\")) return null;
+        if (!validGenerationName(name)) return null;
         File active = new File(new File(sessionDir, ROOT), name);
         return active.isDirectory() && new File(active, "generation_manifest.json").isFile() ? active : null;
     }
@@ -129,6 +135,32 @@ public final class RuntimeEvidenceTransactionCore {
     public static String activeGenerationName(File sessionDir) {
         File active = activeDirectory(sessionDir);
         return active == null ? null : active.getName();
+    }
+
+    public static void publishActivePointer(File sessionDir, String generationName) throws Exception {
+        if (sessionDir == null) throw new IllegalArgumentException("sessionDir is required");
+        if (!validGenerationName(generationName)) throw new IllegalArgumentException("invalid generation name");
+        File committed = new File(new File(sessionDir, ROOT), generationName);
+        if (!committed.isDirectory() || !new File(committed, "generation_manifest.json").isFile()) {
+            throw new IllegalStateException("committed generation is incomplete");
+        }
+        File pointer = new File(sessionDir, POINTER);
+        if (generationName.equals(firstLine(pointer))) return;
+        File pointerTmp = new File(sessionDir, POINTER + ".tmp");
+        writeSynced(pointerTmp, generationName + "\n");
+        File backup = new File(sessionDir, POINTER + ".bak");
+        if (backup.exists() && !backup.delete()) {
+            throw new IllegalStateException("stale generation pointer backup cannot be removed");
+        }
+        boolean hadPointer = pointer.exists();
+        if (hadPointer && !pointer.renameTo(backup)) {
+            throw new IllegalStateException("old generation pointer cannot be backed up");
+        }
+        if (!pointerTmp.renameTo(pointer)) {
+            if (hadPointer) backup.renameTo(pointer);
+            throw new IllegalStateException("generation pointer promotion failed");
+        }
+        if (backup.exists()) backup.delete();
     }
 
     private File target(String relativeName) {
@@ -195,6 +227,7 @@ public final class RuntimeEvidenceTransactionCore {
     }
 
     private static String firstLine(File file) {
+        if (file == null || !file.isFile()) return null;
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line = reader.readLine();
             return line == null ? null : line.trim();
@@ -226,12 +259,55 @@ public final class RuntimeEvidenceTransactionCore {
                 .replaceAll("[^A-Za-z0-9._-]+", "-");
         return safe.length() > 80 ? safe.substring(0, 80) : safe;
     }
+
+    private static boolean validGenerationName(String value) {
+        return value != null && value.endsWith(".committed")
+                && !value.contains("/") && !value.contains("\\") && !value.contains("..");
+    }
+
     private static String clean(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
+
     private static String escape(String value) {
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    private static Method journalMethod(String name, Class<?>... types) {
+        try {
+            Class<?> bridge = Class.forName("cl.skm.pulleyai.RuntimePublicationJournalBridge");
+            return bridge.getMethod(name, types);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    private static void journalRecover(File sessionDir) throws Exception {
+        invokeJournal(JOURNAL_RECOVER, sessionDir);
+    }
+
+    private static void journalBegin(File sessionDir, String runId, String state) throws Exception {
+        invokeJournal(JOURNAL_BEGIN, sessionDir, runId, state);
+    }
+
+    private static void journalMark(File sessionDir, String runId, String state,
+                                    String phase, String generationName, String detail) throws Exception {
+        invokeJournal(JOURNAL_MARK, sessionDir, runId, state, phase, generationName, detail);
+    }
+
+    private static Object invokeJournal(Method method, Object... args) throws Exception {
+        if (method == null) return null;
+        try {
+            return method.invoke(null, args);
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof Exception) throw (Exception) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            throw new IllegalStateException("publication journal failed", cause);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("publication journal unavailable", error);
+        }
     }
 
     public static final class Entry {
