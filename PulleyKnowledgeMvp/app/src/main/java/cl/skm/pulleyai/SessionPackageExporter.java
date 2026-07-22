@@ -5,6 +5,7 @@ import android.os.Build;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -16,7 +17,7 @@ import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** Creates a portable package only after verifying the active committed runtime generation. */
+/** Creates a portable package only after integrity and local signature verification. */
 public final class SessionPackageExporter {
     private SessionPackageExporter() {}
 
@@ -34,6 +35,7 @@ public final class SessionPackageExporter {
         File activeRuntime = RuntimeEvidenceTransactionCore.activeDirectory(sessionDir);
         String activeGeneration = activeRuntime == null ? null : activeRuntime.getName();
         RuntimeGenerationIntegrityCore.Result integrity = null;
+        LocalEvidenceSignatureCore.Verification signatureVerification = null;
         if (activeRuntime != null) {
             integrity = RuntimeGenerationIntegrityCore.verify(activeRuntime);
             if (!integrity.valid) {
@@ -41,12 +43,29 @@ public final class SessionPackageExporter {
                         "Exportación bloqueada: la generación runtime no supera integridad: "
                                 + integrity.issues);
             }
+            File campaignManifest = new File(activeRuntime, "campaign_evidence_manifest.json");
+            File signatureEvidence = new File(activeRuntime, "campaign_evidence_signature.json");
+            if (!campaignManifest.isFile() || !signatureEvidence.isFile()) {
+                throw new IllegalStateException(
+                        "Exportación bloqueada: falta manifiesto o firma local de evidencia");
+            }
+            String campaignPayload = readText(campaignManifest);
+            signatureVerification = LocalEvidenceSignatureCore.verify(
+                    campaignPayload, readText(signatureEvidence));
+            if (!signatureVerification.valid) {
+                throw new IllegalStateException(
+                        "Exportación bloqueada: firma local inválida: "
+                                + signatureVerification.issues);
+            }
         }
         try (ZipOutputStream zip = new ZipOutputStream(
                 new BufferedOutputStream(new FileOutputStream(output)))) {
-            putText(zip, "manifest.json", manifest(session, frames, activeGeneration, integrity));
+            putText(zip, "manifest.json", manifest(session, frames, activeGeneration,
+                    integrity, signatureVerification));
             if (activeRuntime != null) {
                 putText(zip, "export_integrity_verification.json", integrity.canonicalJson());
+                putText(zip, "export_signature_verification.json",
+                        signatureVerification.canonicalJson());
                 copyDirectory(zip, activeRuntime, activeRuntime, "runtime/");
                 copyIfExists(zip, new File(activeRuntime, "overlap_report.json"),
                         "overlap_report.json");
@@ -116,15 +135,16 @@ public final class SessionPackageExporter {
 
     private static String manifest(CaptureStore.Session session, List<CaptureStore.Frame> frames,
                                    String activeGeneration,
-                                   RuntimeGenerationIntegrityCore.Result integrity) {
+                                   RuntimeGenerationIntegrityCore.Result integrity,
+                                   LocalEvidenceSignatureCore.Verification signature) {
         long freeBytes = frames.isEmpty() ? 1024L * 1024L * 1024L
                 : new File(frames.get(0).filePath).getUsableSpace();
         CaptureReadiness.Result readiness = CaptureReadiness.evaluate(
                 session.accepted, session.rejected, session.lowMask, session.highMask,
                 session.shellLengthMm, freeBytes);
-        StringBuilder json = new StringBuilder(4096 + frames.size() * 500);
+        StringBuilder json = new StringBuilder(4600 + frames.size() * 500);
         json.append("{\n");
-        field(json, "schema", "skm-polea-capture/6", true);
+        field(json, "schema", "skm-polea-capture/7", true);
         field(json, "sessionId", session.id, true);
         field(json, "label", session.label, true);
         field(json, "status", session.status, true);
@@ -145,6 +165,19 @@ public final class SessionPackageExporter {
         number(json, "runtimeIntegrityFiles", integrity == null ? 0 : integrity.verifiedFiles, true);
         field(json, "runtimeGenerationManifestSha256",
                 integrity == null ? null : integrity.manifestSha256, true);
+        field(json, "runtimeSignatureVerified",
+                Boolean.toString(signature != null && signature.valid), true, false);
+        field(json, "runtimeSignatureKeyOrigin",
+                signature == null ? null : signature.keyOrigin, true);
+        field(json, "runtimeSignatureHardwareBacked",
+                Boolean.toString(signature != null && signature.hardwareBacked), true, false);
+        field(json, "runtimeSignatureStrongBoxBacked",
+                Boolean.toString(signature != null && signature.strongBoxBacked), true, false);
+        field(json, "runtimeSignaturePayloadSha256",
+                signature == null ? null : signature.payloadSha256, true);
+        field(json, "runtimeSignatureCorporateIdentity", "false", true, false);
+        field(json, "runtimeSignatureIdentityLabel",
+                LocalEvidenceSignatureCore.IDENTITY_LABEL, true);
         field(json, "runtimeBudgetMs", "180000", true, false);
         json.append("  \"readinessSummary\": \"").append(escape(readiness.summary())).append("\",\n");
         json.append("  \"frames\": [\n");
@@ -174,6 +207,16 @@ public final class SessionPackageExporter {
         }
         json.append("  ]\n}");
         return json.toString();
+    }
+
+    private static String readText(File file) throws Exception {
+        try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(file));
+             ByteArrayOutputStream output = new ByteArrayOutputStream((int) Math.min(file.length(), 1024L * 1024L))) {
+            byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 
     private static void putText(ZipOutputStream zip, String name, String text) throws Exception {
