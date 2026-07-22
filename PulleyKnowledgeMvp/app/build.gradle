@@ -20,6 +20,7 @@ android {
     }
 }
 
+// Alpha42 closes the guided two-ring field-remediation iteration.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
