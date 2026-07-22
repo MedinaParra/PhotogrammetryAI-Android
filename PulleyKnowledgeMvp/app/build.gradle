@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai'
         minSdk 24
         targetSdk 35
-        versionCode 42
-        versionName '0.18.0-alpha42'
+        versionCode 44
+        versionName '0.18.0-alpha44'
     }
 
     compileOptions {
@@ -20,11 +20,11 @@ android {
     }
 }
 
-// Alpha42 closes the guided two-ring field-remediation iteration.
+// Alpha44 adds persistent visual target lock, scene ambiguity rejection and graph bridge remediation.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha42')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha44')
     }
     implementation files(cadcoreAar)
 }
