@@ -210,6 +210,12 @@ public final class CaptureStore extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
+            GuidedCaptureAdmissionCore.Decision admission = GuidedCaptureAdmissionCore.evaluate(
+                    q.accepted(), q.reason, band, sector, yaw,
+                    acceptedFrameEvidence(db, sessionId),
+                    q.borderObstructionScore, q.centerDetailRatio);
+            q.applyAdmission(admission);
+
             ContentValues frame = new ContentValues();
             frame.put("id", UUID.randomUUID().toString());
             frame.put("session_id", sessionId);
@@ -271,6 +277,13 @@ public final class CaptureStore extends SQLiteOpenHelper {
         }
     }
 
+    public int acceptedInSector(String sessionId, String band, int sector) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM frame WHERE session_id=? AND quality='ACCEPTED' AND band=? AND sector=?",
+                new String[]{sessionId, "HIGH".equals(band) ? "HIGH" : "LOW", Integer.toString(sector)});
+        try { return c.moveToFirst() ? c.getInt(0) : 0; } finally { c.close(); }
+    }
+
     public List<Frame> frames(String sessionId) {
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT seq,file_path,created_at,yaw,pitch,roll,exposure_ns,iso,focus_distance,width,height," +
@@ -306,11 +319,16 @@ public final class CaptureStore extends SQLiteOpenHelper {
         getWritableDatabase().update("session", row, "id=?", new String[]{id});
     }
 
-    public void finishSession(String id) {
+    public boolean finishSession(String id) {
+        Session current = getSession(id);
+        if (current == null || current.accepted < CaptureReadiness.MIN_ACCEPTED
+                || !CoveragePlanner.isComplete(current.lowMask)
+                || !CoveragePlanner.isComplete(current.highMask)
+                || !current.overlapReady) return false;
         ContentValues row = new ContentValues();
         row.put("status", "CAPTURED");
         row.put("updated_at", System.currentTimeMillis());
-        getWritableDatabase().update("session", row, "id=?", new String[]{id});
+        return getWritableDatabase().update("session", row, "id=?", new String[]{id}) == 1;
     }
 
     public File frameFile(String sessionId, int seq) {
@@ -321,6 +339,24 @@ public final class CaptureStore extends SQLiteOpenHelper {
         File dir = new File(new File(appContext.getFilesDir(), "capture_sessions"), id);
         if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) throw new IllegalStateException("Cannot create " + dir);
         return dir;
+    }
+
+    private static List<GuidedCaptureAdmissionCore.ExistingFrame> acceptedFrameEvidence(
+            SQLiteDatabase db, String sessionId) {
+        Cursor c = db.rawQuery(
+                "SELECT band,sector,yaw FROM frame WHERE session_id=? AND quality='ACCEPTED' ORDER BY seq DESC LIMIT 48",
+                new String[]{sessionId});
+        List<GuidedCaptureAdmissionCore.ExistingFrame> out =
+                new ArrayList<GuidedCaptureAdmissionCore.ExistingFrame>();
+        try {
+            while (c.moveToNext()) {
+                out.add(new GuidedCaptureAdmissionCore.ExistingFrame(
+                        c.getString(0), c.getInt(1), c.getDouble(2)));
+            }
+        } finally {
+            c.close();
+        }
+        return out;
     }
 
     private static Session querySession(SQLiteDatabase db, String id) {
