@@ -43,7 +43,7 @@ public final class RuntimeGenerationIntegrityV60Test {
             RuntimeGenerationIntegrityCore.Result result =
                     RuntimeGenerationIntegrityCore.verify(committed.directory);
             assertTrue(!result.valid, "tampered generation accepted");
-            assertContains(result, "SIZE_MISMATCH:runtime_audit.json");
+            assertContains(result, "SHA256_MISMATCH:runtime_audit.json");
         } finally {
             delete(root);
         }
