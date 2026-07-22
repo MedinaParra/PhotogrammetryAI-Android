@@ -4,7 +4,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 
-/** Lightweight Android decoder feeding deterministic quality and guided-admission gates. */
+/** Lightweight Android decoder feeding deterministic quality, target-lock and guided-admission gates. */
 public final class ImageQualityAnalyzer {
     public static final class Result {
         public final int width;
@@ -16,11 +16,14 @@ public final class ImageQualityAnalyzer {
         public final double motionScore;
         public final double borderObstructionScore;
         public final double centerDetailRatio;
+        public final PulleyTargetLockCore.Signature targetSignature;
+        public double targetContinuity = Double.NaN;
         public String status;
         public String reason;
 
         Result(int width, int height, ImageQualityMath.Result quality,
-               GuidedCaptureAdmissionCore.FrameMetrics frameMetrics) {
+               GuidedCaptureAdmissionCore.FrameMetrics frameMetrics,
+               PulleyTargetLockCore.Signature targetSignature) {
             this.width = width;
             this.height = height;
             this.blurScore = quality.blurScore;
@@ -30,82 +33,73 @@ public final class ImageQualityAnalyzer {
             this.motionScore = quality.motionScore;
             this.borderObstructionScore = frameMetrics.borderObstructionScore;
             this.centerDetailRatio = frameMetrics.centerDetailRatio;
+            this.targetSignature = targetSignature;
             this.status = quality.status;
             this.reason = quality.reason;
         }
 
-        public boolean accepted() {
-            return "ACCEPTED".equals(status);
-        }
+        public boolean accepted() { return "ACCEPTED".equals(status); }
 
         void applyAdmission(GuidedCaptureAdmissionCore.Decision decision) {
             if (decision == null || decision.accepted || !accepted()) return;
             status = "REJECTED";
             reason = decision.reason;
         }
+
+        void applyTargetLock(PulleyTargetLockCore.Decision decision) {
+            if (decision == null) return;
+            targetContinuity = decision.continuity;
+            if (decision.accepted || !accepted()) return;
+            status = "REJECTED";
+            reason = decision.reason;
+        }
     }
 
-    private ImageQualityAnalyzer() {
-    }
+    private ImageQualityAnalyzer() {}
 
     public static Result analyze(byte[] jpegBytes, double motionScore) {
-        if (jpegBytes == null || jpegBytes.length == 0) {
-            return invalid(0, 0, motionScore, "JPEG vacío");
-        }
-
+        if (jpegBytes == null || jpegBytes.length == 0) return invalid(0, 0, motionScore, "JPEG vacío");
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
         BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length, bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0)
             return invalid(0, 0, motionScore, "JPEG inválido");
-        }
-
         int sample = 1;
         int largest = Math.max(bounds.outWidth, bounds.outHeight);
         while (largest / sample > 640) sample *= 2;
-
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inSampleSize = Math.max(1, sample);
         options.inPreferredConfig = Bitmap.Config.ARGB_8888;
         Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length, options);
-        if (bitmap == null) {
-            return invalid(bounds.outWidth, bounds.outHeight, motionScore,
-                    "No se pudo decodificar la imagen");
-        }
-
+        if (bitmap == null) return invalid(bounds.outWidth, bounds.outHeight, motionScore, "No se pudo decodificar la imagen");
         try {
-            int width = bitmap.getWidth();
-            int height = bitmap.getHeight();
+            int width = bitmap.getWidth(), height = bitmap.getHeight();
             int stride = Math.max(1, Math.min(width, height) / 220);
             int gridWidth = Math.max(3, (width + stride - 1) / stride);
             int gridHeight = Math.max(3, (height + stride - 1) / stride);
             double[] luma = new double[gridWidth * gridHeight];
-
             for (int gy = 0; gy < gridHeight; gy++) {
                 int y = Math.min(height - 1, gy * stride);
                 for (int gx = 0; gx < gridWidth; gx++) {
                     int x = Math.min(width - 1, gx * stride);
                     int color = bitmap.getPixel(x, y);
                     luma[gy * gridWidth + gx] = 0.2126 * Color.red(color)
-                            + 0.7152 * Color.green(color)
-                            + 0.0722 * Color.blue(color);
+                            + 0.7152 * Color.green(color) + 0.0722 * Color.blue(color);
                 }
             }
-
-            ImageQualityMath.Result quality = ImageQualityMath.analyze(
-                    luma, gridWidth, gridHeight, motionScore);
+            ImageQualityMath.Result quality = ImageQualityMath.analyze(luma, gridWidth, gridHeight, motionScore);
             GuidedCaptureAdmissionCore.FrameMetrics frameMetrics =
                     GuidedCaptureAdmissionCore.analyzeGrid(luma, gridWidth, gridHeight);
-            return new Result(bounds.outWidth, bounds.outHeight, quality, frameMetrics);
-        } finally {
-            bitmap.recycle();
-        }
+            PulleyTargetLockCore.Signature targetSignature =
+                    PulleyTargetLockCore.analyze(luma, gridWidth, gridHeight);
+            return new Result(bounds.outWidth, bounds.outHeight, quality, frameMetrics, targetSignature);
+        } finally { bitmap.recycle(); }
     }
 
     private static Result invalid(int width, int height, double motionScore, String reason) {
-        ImageQualityMath.Result quality = new ImageQualityMath.Result(
-                0, 0, 1, 0, motionScore, "REJECTED", reason);
+        ImageQualityMath.Result quality = new ImageQualityMath.Result(0, 0, 1, 0, motionScore, "REJECTED", reason);
         return new Result(width, height, quality,
-                new GuidedCaptureAdmissionCore.FrameMetrics(1.0, 0.0));
+                new GuidedCaptureAdmissionCore.FrameMetrics(1.0, 0.0),
+                PulleyTargetLockCore.Signature.invalid());
     }
 }
