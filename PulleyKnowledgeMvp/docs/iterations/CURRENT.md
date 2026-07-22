@@ -1,13 +1,13 @@
 # Estado actual de iteraciones
 
-**Actualizado:** 2026-07-21  
+**Actualizado:** 2026-07-22  
 **Rama:** `agent/photogrammetry-validation-alpha20`  
 **PR activo:** `#8` — borrador  
-**Versión Android:** `0.18.0-alpha34`
+**Versión Android:** `0.18.0-alpha38`
 
 ## Estado acumulado
 
-- Alpha34 compila para `arm64-v8a` con STEP/OCCT.
+- Alpha38 compila para `arm64-v8a` con STEP/OCCT.
 - Evidencia dimensional, identificación, safety gate, pose graph y reconstrucción mantienen gates automáticos.
 - La ventana BA permanece limitada a 8 cámaras, 120 puntos y 1500 observaciones con cámara global 0 fija.
 - El BA base optimiza puntos y traslaciones con Huber y priors.
@@ -18,36 +18,34 @@
 - Los residuos publican mediana, MAD, P90 e intervalo empírico 2,5–97,5 % en píxeles.
 - Toda estadística rotacional se etiqueta `EMPIRICAL_RESIDUAL_INTERVAL_NOT_METROLOGICAL`.
 - Métricas visuales, cancelación profunda parcial, generaciones transaccionales y manifiestos reproducibles permanecen activas.
-- El exportador solo incluye la generación comprometida vigente.
+- Antes de exportar una generación comprometida, alpha38 verifica rutas, tamaños, archivos listados y SHA-256.
+- Una alteración, archivo inyectado o archivo faltante bloquea el ZIP de sesión.
+- El ZIP incluye `export_integrity_verification.json` y usa esquema `skm-polea-capture/6`.
 - No existe todavía campaña física completada ni calificación industrial.
 
 ## Avance global estimado
 
-- **Avance integral: 92 %.**
+- **Avance integral: 93 %.**
 - **Madurez alpha: 99 %.**
 - **Preparación industrial/metrológica: 24 %.**
 
-El incremento corresponde al refinamiento rotacional acotado y auditable. La preparación industrial sigue baja porque Samsung A15, Honor X5C, calibración física e instrumentos trazables no fueron ejecutados.
+El incremento corresponde a integridad fail-closed de exportación. La preparación industrial no aumenta porque Samsung A15, Honor X5C, calibración física e instrumentos trazables no fueron ejecutados.
 
 ## Iteración actual o última cerrada
 
-### ITER-016 — Rotaciones BA acotadas e intervalos estadísticos de residuos
+### ITER-017R — Sincronización alpha38 e integridad de exportación
 
-Registro: `history/ITER-016_2026-07-21_bounded-rotational-ba-statistical-residuals.md`
-
-- segunda etapa posterior al BA estable;
-- cámara 0 fija en rotación y traslación;
-- centros de cámara preservados durante propuestas;
-- damping, prior rotacional y límites 0,35°/3°;
-- aceptación solo con mejora geométrica integral;
-- fallback exacto al BA base;
-- estadística empírica explícitamente no metrológica;
-- evidencia `runtime_rotational_ba.json`;
-- auditoría runtime esquema 5;
-- gate v59 incorporado;
-- producto run `#688`: `success`;
-- 33 gates Java;
-- APK alpha34 publicada;
+- versión Android y workflow sincronizados realmente en alpha38;
+- gate v60 incorporado;
+- generación válida verificada;
+- manipulación SHA-256 bloqueada;
+- archivo inyectado bloqueado;
+- archivo faltante bloqueado;
+- paquete de sesión actualizado a esquema 6;
+- producto run `#716`: `success`;
+- 34 gates Java;
+- Gradle y cierre OCCT aprobados;
+- APK alpha38 publicada;
 - uso industrial continúa bloqueado.
 
 ## Bloqueos activos
@@ -55,7 +53,7 @@ Registro: `history/ITER-016_2026-07-21_bounded-rotational-ba-statistical-residua
 1. `INTR-001`: intrínsecos permanecen fijos y dependen de Camera2/perfiles no validados físicamente;
 2. `BA-003`: no existe BA global ni Schur complement;
 3. `STAT-001`: intervalos de residuos no representan incertidumbre física o dimensional;
-4. `RUNTIME-003`: fundamental, pose, triangulación y Bitmap decode no tienen checkpoints internos;
+4. `RUNTIME-003`: fundamental, pose, triangulación y Bitmap decode no tienen todos los checkpoints internos;
 5. `TX-001`: no existe transacción coordinada entre SQLite y filesystem;
 6. `SIGN-001`: la huella de evidencia no está firmada por una identidad corporativa;
 7. `DEVICE-001`: campaña Samsung A15 no ejecutada;
@@ -66,15 +64,15 @@ Registro: `history/ITER-016_2026-07-21_bounded-rotational-ba-statistical-residua
 
 ## Siguiente iteración obligatoria
 
-### ITER-017 — Intrínsecos focales condicionados y observabilidad
+### ITER-018 — Intrínsecos focales condicionados y observabilidad
 
 Permitir una corrección focal pequeña y fuertemente priorizada, mantener principal point y distorsión fijos, bloquear problemas mal condicionados y conservar fallback al BA rotacional/base.
 
 ## Criterios de entrada
 
-- conservar los 33 gates previos;
+- conservar los 34 gates previos;
 - mantener límites 8/120/1500 y cámara 0 fija;
-- conservar generaciones transaccionales y manifiestos reproducibles;
+- conservar generaciones transaccionales, manifiestos e integridad de exportación;
 - no optimizar `cx`, `cy` ni distorsión;
 - no declarar perfiles físicos no validados;
 - mantener PR en borrador.
@@ -86,7 +84,6 @@ Permitir una corrección focal pequeña y fuertemente priorizada, mantener princ
 - aceptación exige mejora geométrica sin absorber error de pose;
 - fallback por mala condición probado;
 - sensibilidad etiquetada como estadística no metrológica;
-- alpha35 compilada;
+- nueva alpha compilada;
 - CI producto e historial exitosos;
-- ITER-017 archivada;
-- este archivo actualizado con ITER-018.
+- siguiente iteración archivada.
