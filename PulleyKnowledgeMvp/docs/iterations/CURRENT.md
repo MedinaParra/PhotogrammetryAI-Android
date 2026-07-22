@@ -3,58 +3,60 @@
 **Actualizado:** 2026-07-22  
 **Rama:** `agent/photogrammetry-validation-alpha20`  
 **PR activo:** `#8` — borrador  
-**Versión Android:** `0.18.0-alpha38`
+**Versión Android:** `0.18.0-alpha39`
 
 ## Estado acumulado
 
-- Alpha38 compila para `arm64-v8a` con STEP/OCCT.
+- Alpha39 compila para `arm64-v8a` con STEP/OCCT.
 - Evidencia dimensional, identificación, safety gate, pose graph y reconstrucción mantienen gates automáticos.
 - La ventana BA permanece limitada a 8 cámaras, 120 puntos y 1500 observaciones con cámara global 0 fija.
 - El BA base optimiza puntos y traslaciones con Huber y priors.
-- Una segunda etapa puede corregir pequeñas rotaciones en cámaras distintas de la cámara 0.
-- Los pasos rotacionales están limitados a 0,35° y el desplazamiento acumulado a 3° por cámara.
-- La etapa rotacional solo se aplica cuando mejora costo robusto y RMS, conserva profundidad positiva y mantiene el gauge exacto.
-- Cuando la etapa rotacional no es admisible se conserva el resultado base exacto.
-- Los residuos publican mediana, MAD, P90 e intervalo empírico 2,5–97,5 % en píxeles.
-- Toda estadística rotacional se etiqueta `EMPIRICAL_RESIDUAL_INTERVAL_NOT_METROLOGICAL`.
-- Métricas visuales, cancelación profunda parcial, generaciones transaccionales y manifiestos reproducibles permanecen activas.
-- Antes de exportar una generación comprometida, alpha38 verifica rutas, tamaños, archivos listados y SHA-256.
+- Una segunda etapa corrige pequeñas rotaciones de cámaras secundarias con límites de 0,35° por paso y 3° acumulados.
+- Una tercera etapa puede corregir una escala focal conjunta para `fx/fy` cuando existe observabilidad suficiente.
+- La cámara 0, `cx`, `cy`, distorsión y razón `fx/fy` permanecen fijos.
+- La observabilidad focal combina cantidad de observaciones, cobertura radial, diversidad de profundidad e información respecto del prior.
+- Una escena focal mal condicionada conserva exactamente el resultado rotacional anterior.
+- La sensibilidad focal se etiqueta `EMPIRICAL_FOCAL_SENSITIVITY_NOT_CALIBRATION`.
+- Los residuos rotacionales se etiquetan `EMPIRICAL_RESIDUAL_INTERVAL_NOT_METROLOGICAL`.
+- Antes de exportar, se verifican rutas, tamaños, archivos listados y SHA-256 de la generación activa.
 - Una alteración, archivo inyectado o archivo faltante bloquea el ZIP de sesión.
-- El ZIP incluye `export_integrity_verification.json` y usa esquema `skm-polea-capture/6`.
 - No existe todavía campaña física completada ni calificación industrial.
 
 ## Avance global estimado
 
-- **Avance integral: 93 %.**
+- **Avance integral: 94 %.**
 - **Madurez alpha: 99 %.**
-- **Preparación industrial/metrológica: 24 %.**
+- **Preparación industrial/metrológica: 25 %.**
 
-El incremento corresponde a integridad fail-closed de exportación. La preparación industrial no aumenta porque Samsung A15, Honor X5C, calibración física e instrumentos trazables no fueron ejecutados.
+El incremento corresponde a corrección focal acotada, observable y validada. La preparación industrial continúa baja porque Samsung A15, Honor X5C, calibración física e instrumentos trazables no fueron ejecutados.
 
 ## Iteración actual o última cerrada
 
-### ITER-017R — Sincronización alpha38 e integridad de exportación
+### ITER-018 — Intrínsecos focales condicionados y observabilidad
 
-- versión Android y workflow sincronizados realmente en alpha38;
-- gate v60 incorporado;
-- generación válida verificada;
-- manipulación SHA-256 bloqueada;
-- archivo inyectado bloqueado;
-- archivo faltante bloqueado;
-- paquete de sesión actualizado a esquema 6;
-- producto run `#716`: `success`;
-- 34 gates Java;
+Registro: `history/ITER-018_2026-07-22_conditioned-focal-ba-observability.md`
+
+- corrección focal conjunta de `fx/fy` por cámara secundaria;
+- cámara 0 y principal point fijos;
+- razón `fx/fy` invariante;
+- prior fuerte, damping y límites porcentuales;
+- observabilidad radial y de profundidad;
+- fallback exacto para escena mal condicionada;
+- sensibilidad explícitamente no calibración;
+- evidencia `runtime_focal_ba.json`;
+- producto run `#729`: `success`;
+- 35 gates Java;
 - Gradle y cierre OCCT aprobados;
-- APK alpha38 publicada;
+- APK alpha39 publicada;
 - uso industrial continúa bloqueado.
 
 ## Bloqueos activos
 
-1. `INTR-001`: intrínsecos permanecen fijos y dependen de Camera2/perfiles no validados físicamente;
+1. `INTR-002`: observabilidad focal validada sintéticamente, no con cámaras físicas;
 2. `BA-003`: no existe BA global ni Schur complement;
-3. `STAT-001`: intervalos de residuos no representan incertidumbre física o dimensional;
+3. `STAT-001`: sensibilidad e intervalos no representan incertidumbre física o dimensional;
 4. `RUNTIME-003`: fundamental, pose, triangulación y Bitmap decode no tienen todos los checkpoints internos;
-5. `TX-001`: no existe transacción coordinada entre SQLite y filesystem;
+5. `TX-001`: no existe journal coordinado entre SQLite y filesystem;
 6. `SIGN-001`: la huella de evidencia no está firmada por una identidad corporativa;
 7. `DEVICE-001`: campaña Samsung A15 no ejecutada;
 8. `DEVICE-002`: campaña Honor X5C no ejecutada;
@@ -64,26 +66,24 @@ El incremento corresponde a integridad fail-closed de exportación. La preparaci
 
 ## Siguiente iteración obligatoria
 
-### ITER-018 — Intrínsecos focales condicionados y observabilidad
+### ITER-019 — Checkpoints geométricos y journal coordinado
 
-Permitir una corrección focal pequeña y fuertemente priorizada, mantener principal point y distorsión fijos, bloquear problemas mal condicionados y conservar fallback al BA rotacional/base.
+Instrumentar cancelación dentro de fundamental, pose y triangulación; coordinar estados SQLite/filesystem mediante un journal recuperable; impedir que un fallo posterior invalide una generación ya publicada; probar recuperación, rollback y evidencia incompleta.
 
 ## Criterios de entrada
 
-- conservar los 34 gates previos;
+- conservar los 35 gates previos;
 - mantener límites 8/120/1500 y cámara 0 fija;
-- conservar generaciones transaccionales, manifiestos e integridad de exportación;
-- no optimizar `cx`, `cy` ni distorsión;
-- no declarar perfiles físicos no validados;
+- conservar fallback rotacional/focal e integridad de exportación;
+- no declarar campañas físicas no ejecutadas;
 - mantener PR en borrador.
 
 ## Criterios de salida
 
-- corrección focal acotada implementada;
-- observabilidad y límites verificados;
-- aceptación exige mejora geométrica sin absorber error de pose;
-- fallback por mala condición probado;
-- sensibilidad etiquetada como estadística no metrológica;
+- checkpoints geométricos internos verificados;
+- journal coordinado y recuperable;
+- recuperación de generación publicada probada;
+- evidencia incompleta bloqueada;
 - nueva alpha compilada;
 - CI producto e historial exitosos;
-- siguiente iteración archivada.
+- ITER-019 archivada.
