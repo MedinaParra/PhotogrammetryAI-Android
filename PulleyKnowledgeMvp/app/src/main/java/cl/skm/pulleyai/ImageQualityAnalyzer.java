@@ -4,7 +4,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 
-/** Lightweight Android decoder feeding the pure deterministic quality gate. */
+/** Lightweight Android decoder feeding deterministic quality and guided-admission gates. */
 public final class ImageQualityAnalyzer {
     public static final class Result {
         public final int width;
@@ -14,10 +14,13 @@ public final class ImageQualityAnalyzer {
         public final double darkFraction;
         public final double brightFraction;
         public final double motionScore;
-        public final String status;
-        public final String reason;
+        public final double borderObstructionScore;
+        public final double centerDetailRatio;
+        public String status;
+        public String reason;
 
-        Result(int width, int height, ImageQualityMath.Result quality) {
+        Result(int width, int height, ImageQualityMath.Result quality,
+               GuidedCaptureAdmissionCore.FrameMetrics frameMetrics) {
             this.width = width;
             this.height = height;
             this.blurScore = quality.blurScore;
@@ -25,12 +28,20 @@ public final class ImageQualityAnalyzer {
             this.darkFraction = quality.darkFraction;
             this.brightFraction = quality.brightFraction;
             this.motionScore = quality.motionScore;
+            this.borderObstructionScore = frameMetrics.borderObstructionScore;
+            this.centerDetailRatio = frameMetrics.centerDetailRatio;
             this.status = quality.status;
             this.reason = quality.reason;
         }
 
         public boolean accepted() {
             return "ACCEPTED".equals(status);
+        }
+
+        void applyAdmission(GuidedCaptureAdmissionCore.Decision decision) {
+            if (decision == null || decision.accepted || !accepted()) return;
+            status = "REJECTED";
+            reason = decision.reason;
         }
     }
 
@@ -58,7 +69,8 @@ public final class ImageQualityAnalyzer {
         options.inPreferredConfig = Bitmap.Config.ARGB_8888;
         Bitmap bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length, options);
         if (bitmap == null) {
-            return invalid(bounds.outWidth, bounds.outHeight, motionScore, "No se pudo decodificar la imagen");
+            return invalid(bounds.outWidth, bounds.outHeight, motionScore,
+                    "No se pudo decodificar la imagen");
         }
 
         try {
@@ -81,12 +93,10 @@ public final class ImageQualityAnalyzer {
             }
 
             ImageQualityMath.Result quality = ImageQualityMath.analyze(
-                    luma,
-                    gridWidth,
-                    gridHeight,
-                    motionScore
-            );
-            return new Result(bounds.outWidth, bounds.outHeight, quality);
+                    luma, gridWidth, gridHeight, motionScore);
+            GuidedCaptureAdmissionCore.FrameMetrics frameMetrics =
+                    GuidedCaptureAdmissionCore.analyzeGrid(luma, gridWidth, gridHeight);
+            return new Result(bounds.outWidth, bounds.outHeight, quality, frameMetrics);
         } finally {
             bitmap.recycle();
         }
@@ -94,8 +104,8 @@ public final class ImageQualityAnalyzer {
 
     private static Result invalid(int width, int height, double motionScore, String reason) {
         ImageQualityMath.Result quality = new ImageQualityMath.Result(
-                0, 0, 1, 0, motionScore, "REJECTED", reason
-        );
-        return new Result(width, height, quality);
+                0, 0, 1, 0, motionScore, "REJECTED", reason);
+        return new Result(width, height, quality,
+                new GuidedCaptureAdmissionCore.FrameMetrics(1.0, 0.0));
     }
 }
