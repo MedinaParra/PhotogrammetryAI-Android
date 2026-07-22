@@ -7,11 +7,31 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'cl.skm.pulleyai'
+        applicationId 'cl.skm.pulleyai.lab'
         minSdk 24
         targetSdk 35
-        versionCode 45
-        versionName '0.18.0-alpha45'
+        versionCode 46
+        versionName '0.18.0-alpha46'
+    }
+
+    signingConfigs {
+        alphaLab {
+            def keyPath = System.getenv('SKM_ALPHA_KEYSTORE_PATH')
+            if (keyPath != null && !keyPath.trim().isEmpty()) {
+                storeFile file(keyPath)
+                storePassword System.getenv('SKM_ALPHA_KEYSTORE_PASSWORD') ?: 'skm-alpha-test'
+                keyAlias System.getenv('SKM_ALPHA_KEY_ALIAS') ?: 'skm-alpha-lab'
+                keyPassword System.getenv('SKM_ALPHA_KEY_PASSWORD') ?: 'skm-alpha-test'
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            if (System.getenv('SKM_ALPHA_KEYSTORE_PATH')) {
+                signingConfig signingConfigs.alphaLab
+            }
+        }
     }
 
     compileOptions {
@@ -20,11 +40,11 @@ android {
     }
 }
 
-// Alpha45 exposes session ZIP export from the scrollable launcher when the capture panel is clipped.
+// Alpha46 Lab installs beside earlier alphas and reprocesses exported capture ZIPs with pair-level diagnostics.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha45')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha46 Lab')
     }
     implementation files(cadcoreAar)
 }
