@@ -4,7 +4,7 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
     <application
         android:allowBackup="true"
-        android:label="SKM Polea AI"
+        android:label="SKM Polea AI Lab"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".LauncherActivity"
@@ -17,6 +17,10 @@
         </activity>
         <activity
             android:name=".CaptureActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <activity
+            android:name=".ZipReprocessActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
         <activity
