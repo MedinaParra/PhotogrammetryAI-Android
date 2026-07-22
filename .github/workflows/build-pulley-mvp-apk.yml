@@ -102,6 +102,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_deep_cancellation_transaction_v58_test.sh
       - name: Test bounded rotational BA and statistical residual intervals
         run: bash PulleyKnowledgeMvp/tools/run_rotational_bundle_adjustment_v59_test.sh
+      - name: Test conditioned focal BA, observability and exact fallback
+        run: bash PulleyKnowledgeMvp/tools/run_conditioned_focal_bundle_adjustment_v60_test.sh
       - name: Test fail-closed runtime generation export integrity
         run: bash PulleyKnowledgeMvp/tools/run_runtime_generation_integrity_v60_test.sh
       - name: Fetch verified pruned STEP-enabled cadcore v2 release
@@ -127,7 +129,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha38-build-diagnostic
+          name: SKM-Polea-AI-alpha39-build-diagnostic
           path: artifacts/gradle-build.log
           if-no-files-found: warn
           retention-days: 14
@@ -135,7 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          CHECK="$RUNNER_TEMP/alpha38-apk"
+          CHECK="$RUNNER_TEMP/alpha39-apk"
           rm -rf "$CHECK" && mkdir -p "$CHECK"
           unzip -q "$APK" -d "$CHECK"
           test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
@@ -154,20 +156,20 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha38-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          manifest=json.loads(Path("${{ runner.temp }}/alpha39-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
           assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
           assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha38 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          print("alpha39 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
           PY
       - name: Prepare artifact
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha38.apk
-          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha38.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha39.apk
+          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha39.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha38
+          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha39
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
