@@ -114,3 +114,26 @@ El aumento corresponde a una mejora algorítmica validada y fail-closed. La prep
 - impedir que un fallo posterior invalide una generación ya publicada;
 - probar recuperación, rollback y evidencia incompleta;
 - conservar PR en borrador y bloqueo industrial.
+
+## Criterios de entrada y salida
+
+### Entrada
+
+- conservar los 34 gates previos a la validación focal;
+- mantener límites de 8 cámaras, 120 puntos y 1500 observaciones;
+- mantener cámara 0, `cx`, `cy`, distorsión y razón `fx/fy` fijos;
+- conservar fallback rotacional y generaciones transaccionales;
+- mantener integridad fail-closed en la exportación;
+- no declarar calibración física ni campañas no ejecutadas;
+- mantener PR #8 en borrador.
+
+### Salida
+
+- gate focal incorporado y aprobado junto con los 34 gates anteriores;
+- escena observable aceptada con mejora RMS y corrección acotada;
+- escena no observable rechazada con fallback exacto;
+- invariantes de cámara e intrínsecos verificadas;
+- sensibilidad etiquetada como no calibración;
+- alpha39 compilada con STEP/OCCT y 25 bibliotecas nativas;
+- producto GitHub Actions run `#729` aprobado;
+- historial actualizado y preparado para declarar ITER-019.
