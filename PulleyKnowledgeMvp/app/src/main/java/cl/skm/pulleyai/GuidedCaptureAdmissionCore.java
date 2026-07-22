@@ -6,6 +6,7 @@ import java.util.List;
 /** Fail-closed admission and operator guidance for balanced two-ring capture. */
 public final class GuidedCaptureAdmissionCore {
     public static final int MAX_ACCEPTED_PER_CELL = 2;
+    public static final int MAX_ACCEPTED_BRIDGE_CELL = 3;
     public static final double MIN_DISTINCT_YAW_DEGREES = 6.0;
     public static final double MAX_BORDER_OBSTRUCTION_SCORE = 0.82;
     public static final double MIN_CENTER_DETAIL_RATIO = 0.025;
@@ -17,16 +18,22 @@ public final class GuidedCaptureAdmissionCore {
                                     List<ExistingFrame> acceptedFrames,
                                     double borderObstructionScore,
                                     double centerDetailRatio) {
+        return evaluate(baseAccepted, baseReason, band, sector, yawDegrees, acceptedFrames,
+                borderObstructionScore, centerDetailRatio, false);
+    }
+
+    public static Decision evaluate(boolean baseAccepted, String baseReason,
+                                    String band, int sector, double yawDegrees,
+                                    List<ExistingFrame> acceptedFrames,
+                                    double borderObstructionScore,
+                                    double centerDetailRatio,
+                                    boolean bridgeRemediation) {
         if (!baseAccepted) return Decision.rejected(clean(baseReason, "Calidad base insuficiente"));
-        if (sector < 0 || sector >= CoveragePlanner.SECTOR_COUNT) {
-            return Decision.rejected("Sector angular inválido");
-        }
-        if (borderObstructionScore >= MAX_BORDER_OBSTRUCTION_SCORE) {
+        if (sector < 0 || sector >= CoveragePlanner.SECTOR_COUNT) return Decision.rejected("Sector angular inválido");
+        if (borderObstructionScore >= MAX_BORDER_OBSTRUCTION_SCORE)
             return Decision.rejected("Lente parcialmente obstruida o borde dominante; despeje la cámara");
-        }
-        if (centerDetailRatio < MIN_CENTER_DETAIL_RATIO) {
+        if (centerDetailRatio < MIN_CENTER_DETAIL_RATIO)
             return Decision.rejected("Encuadre central sin detalle suficiente; centre la polea completa");
-        }
         int sameCell = 0;
         double nearestYaw = Double.POSITIVE_INFINITY;
         List<ExistingFrame> frames = acceptedFrames == null
@@ -36,23 +43,22 @@ public final class GuidedCaptureAdmissionCore {
             sameCell++;
             nearestYaw = Math.min(nearestYaw, angularDistance(yawDegrees, frame.yawDegrees));
         }
-        if (sameCell >= MAX_ACCEPTED_PER_CELL) {
-            return Decision.rejected("Sector ya cubierto con dos vistas; avance al siguiente sector");
-        }
-        if (sameCell > 0 && nearestYaw < MIN_DISTINCT_YAW_DEGREES) {
+        int maximum = bridgeRemediation ? MAX_ACCEPTED_BRIDGE_CELL : MAX_ACCEPTED_PER_CELL;
+        if (sameCell >= maximum)
+            return Decision.rejected(bridgeRemediation
+                    ? "Sector puente ya tiene tres vistas; vuelva a verificar solape"
+                    : "Sector ya cubierto con dos vistas; avance al siguiente sector");
+        if (sameCell > 0 && nearestYaw < MIN_DISTINCT_YAW_DEGREES)
             return Decision.rejected("Captura redundante; muévase físicamente antes de repetir el sector");
-        }
-        return Decision.accepted();
+        return Decision.accepted(bridgeRemediation ? "Captura puente admitida" : "Calidad y diversidad suficientes");
     }
 
     public static FrameMetrics analyzeGrid(double[] luma, int width, int height) {
-        if (luma == null || width < 12 || height < 12 || luma.length < width * height) {
+        if (luma == null || width < 12 || height < 12 || luma.length < width * height)
             return new FrameMetrics(1.0, 0.0);
-        }
-        Region center = region(luma, width, height,
-                width / 5, height / 6, width - width / 5, height - height / 6);
-        int stripX = Math.max(2, width / 5);
-        int stripY = Math.max(2, height / 5);
+        Region center = region(luma, width, height, width / 5, height / 6,
+                width - width / 5, height - height / 6);
+        int stripX = Math.max(2, width / 5), stripY = Math.max(2, height / 5);
         Region left = region(luma, width, height, 0, 0, stripX, height);
         Region right = region(luma, width, height, width - stripX, 0, width, height);
         Region top = region(luma, width, height, 0, 0, width, stripY);
@@ -70,32 +76,22 @@ public final class GuidedCaptureAdmissionCore {
         if (lowComplete && !highComplete && !"HIGH".equals(activeBand)) return "Cambie a ALTURA: ALTA y complete el segundo anillo";
         if (!lowComplete) return "Complete los sectores faltantes del anillo EJE";
         if (!highComplete) return "Complete los sectores faltantes del anillo ALTA";
-        if (accepted < CaptureReadiness.MIN_ACCEPTED) {
+        if (accepted < CaptureReadiness.MIN_ACCEPTED)
             return "Ambos anillos completos; agregue " + (CaptureReadiness.MIN_ACCEPTED - accepted)
                     + " vistas distintas en sectores ya cubiertos";
-        }
         if (!overlapReady) return "Ambos anillos completos; ejecute VERIFICAR SOLAPE";
         return "Recorrido listo para finalizar";
     }
 
-    private static Region region(double[] luma, int width, int height,
-                                 int x0, int y0, int x1, int y1) {
-        x0 = Math.max(0, Math.min(width - 2, x0));
-        y0 = Math.max(0, Math.min(height - 2, y0));
-        x1 = Math.max(x0 + 2, Math.min(width, x1));
-        y1 = Math.max(y0 + 2, Math.min(height, y1));
-        double sum = 0.0, square = 0.0;
-        int count = 0, detailed = 0;
-        for (int y = y0; y < y1 - 1; y++) {
-            for (int x = x0; x < x1 - 1; x++) {
-                double value = luma[y * width + x];
-                sum += value;
-                square += value * value;
-                count++;
-                double gradient = Math.abs(value - luma[y * width + x + 1])
-                        + Math.abs(value - luma[(y + 1) * width + x]);
-                if (gradient >= 22.0) detailed++;
-            }
+    private static Region region(double[] luma, int width, int height, int x0, int y0, int x1, int y1) {
+        x0 = Math.max(0, Math.min(width - 2, x0)); y0 = Math.max(0, Math.min(height - 2, y0));
+        x1 = Math.max(x0 + 2, Math.min(width, x1)); y1 = Math.max(y0 + 2, Math.min(height, y1));
+        double sum = 0.0, square = 0.0; int count = 0, detailed = 0;
+        for (int y = y0; y < y1 - 1; y++) for (int x = x0; x < x1 - 1; x++) {
+            double value = luma[y * width + x]; sum += value; square += value * value; count++;
+            double gradient = Math.abs(value - luma[y * width + x + 1])
+                    + Math.abs(value - luma[(y + 1) * width + x]);
+            if (gradient >= 22.0) detailed++;
         }
         double mean = count == 0 ? 0.0 : sum / count;
         double variance = count == 0 ? 0.0 : Math.max(0.0, square / count - mean * mean);
@@ -109,61 +105,41 @@ public final class GuidedCaptureAdmissionCore {
         return 0.42 * uniformity + 0.38 * lowDetail + 0.20 * contrast;
     }
 
-    private static boolean sameBand(String first, String second) {
-        return "HIGH".equals(first) == "HIGH".equals(second);
-    }
-
+    private static boolean sameBand(String first, String second) { return "HIGH".equals(first) == "HIGH".equals(second); }
     private static double angularDistance(double first, double second) {
-        double delta = Math.abs(CoveragePlanner.normalizeYaw(first)
-                - CoveragePlanner.normalizeYaw(second));
+        double delta = Math.abs(CoveragePlanner.normalizeYaw(first) - CoveragePlanner.normalizeYaw(second));
         return Math.min(delta, 360.0 - delta);
     }
-
     private static String clean(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
-
     private static double clamp(double value, double minimum, double maximum) {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
     private static final class Region {
-        final double standardDeviation;
-        final double detailRatio;
+        final double standardDeviation, detailRatio;
         Region(double standardDeviation, double detailRatio) {
-            this.standardDeviation = standardDeviation;
-            this.detailRatio = detailRatio;
+            this.standardDeviation = standardDeviation; this.detailRatio = detailRatio;
         }
     }
 
     public static final class ExistingFrame {
-        public final String band;
-        public final int sector;
-        public final double yawDegrees;
+        public final String band; public final int sector; public final double yawDegrees;
         public ExistingFrame(String band, int sector, double yawDegrees) {
-            this.band = band;
-            this.sector = sector;
-            this.yawDegrees = yawDegrees;
+            this.band = band; this.sector = sector; this.yawDegrees = yawDegrees;
         }
     }
-
     public static final class FrameMetrics {
-        public final double borderObstructionScore;
-        public final double centerDetailRatio;
+        public final double borderObstructionScore, centerDetailRatio;
         FrameMetrics(double borderObstructionScore, double centerDetailRatio) {
-            this.borderObstructionScore = borderObstructionScore;
-            this.centerDetailRatio = centerDetailRatio;
+            this.borderObstructionScore = borderObstructionScore; this.centerDetailRatio = centerDetailRatio;
         }
     }
-
     public static final class Decision {
-        public final boolean accepted;
-        public final String reason;
-        private Decision(boolean accepted, String reason) {
-            this.accepted = accepted;
-            this.reason = reason;
-        }
-        static Decision accepted() { return new Decision(true, "Calidad y diversidad suficientes"); }
+        public final boolean accepted; public final String reason;
+        private Decision(boolean accepted, String reason) { this.accepted = accepted; this.reason = reason; }
+        static Decision accepted(String reason) { return new Decision(true, reason); }
         static Decision rejected(String reason) { return new Decision(false, reason); }
     }
 }
