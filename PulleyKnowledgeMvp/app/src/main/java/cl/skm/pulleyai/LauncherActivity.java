@@ -20,7 +20,7 @@ import java.io.FileInputStream;
 import java.util.List;
 import java.util.Locale;
 
-/** Single product entry point for capture, reconstruction, CAD assembly and native STEP. */
+/** Single product entry point for capture, ZIP reprocessing, CAD assembly and native STEP. */
 public final class LauncherActivity extends Activity {
     private static final int EXPORT_DOCUMENT = 4310;
 
@@ -44,6 +44,7 @@ public final class LauncherActivity extends Activity {
     }
 
     @Override protected void onResume() { super.onResume(); refresh(); }
+
     @Override protected void onDestroy() {
         captureStore.close();
         if (revisionedKnowledge != null) revisionedKnowledge.close();
@@ -57,10 +58,12 @@ public final class LauncherActivity extends Activity {
         root.setBackgroundColor(Color.rgb(244, 247, 249));
         scroll.addView(root);
 
-        TextView title = text("SKM Polea AI", 28, true);
+        TextView title = text("SKM Polea AI Lab", 28, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
-        TextView subtitle = text("Captura horizontal, fotogrametría, ensamblaje CAD, STEP nativo y validación trazable.", 15, false);
+        TextView subtitle = text(
+                "Captura horizontal, reprocesamiento de ZIP, fotogrametría, ensamblaje CAD, STEP nativo y validación trazable.",
+                15, false);
         subtitle.setPadding(0, dp(4), 0, dp(14));
         root.addView(subtitle);
 
@@ -76,10 +79,18 @@ public final class LauncherActivity extends Activity {
         Button resume = button("CONTINUAR ÚLTIMA CAPTURA");
         resume.setOnClickListener(view -> {
             CaptureStore.Session session = captureStore.latestOpen();
-            if (session == null) Toast.makeText(this, "No hay una sesión abierta.", Toast.LENGTH_LONG).show();
-            else openCapture(session.id);
+            if (session == null) {
+                Toast.makeText(this, "No hay una sesión abierta.", Toast.LENGTH_LONG).show();
+            } else {
+                openCapture(session.id);
+            }
         });
         root.addView(resume);
+
+        Button reprocess = button("IMPORTAR Y REPROCESAR ZIP DE CAPTURA");
+        reprocess.setOnClickListener(view ->
+                startActivity(new Intent(this, ZipReprocessActivity.class)));
+        root.addView(reprocess);
 
         Button export = button("EXPORTAR ÚLTIMA SESIÓN (ZIP)");
         export.setOnClickListener(view -> exportSession(latestSessionId()));
@@ -90,7 +101,8 @@ public final class LauncherActivity extends Activity {
         root.addView(runtime);
 
         Button campaign = button("CAMPAÑA FÍSICA DE DISPOSITIVO");
-        campaign.setOnClickListener(view -> startActivity(new Intent(this, DeviceCampaignActivity.class)));
+        campaign.setOnClickListener(view ->
+                startActivity(new Intent(this, DeviceCampaignActivity.class)));
         root.addView(campaign);
 
         Button cad = button("ENSAMBLAJE CAD / IMPORTAR STEP");
@@ -102,11 +114,12 @@ public final class LauncherActivity extends Activity {
         root.addView(kernel);
 
         Button knowledge = button("CONOCIMIENTO Y VALIDACIÓN DE COTAS");
-        knowledge.setOnClickListener(view -> startActivity(new Intent(this, MainActivity.class)));
+        knowledge.setOnClickListener(view ->
+                startActivity(new Intent(this, MainActivity.class)));
         root.addView(knowledge);
 
         TextView warning = text(
-                "La superposición CAD usa transformaciones rígidas. Ningún STEP se escala para forzar coincidencia. Los archivos se validan por SHA-256 y solo se dibujan cuando el kernel OCCT devuelve una teselación real.",
+                "Alpha46 Lab se instala como paquete separado para evitar el conflicto de firma de alpha44/45. El reprocesamiento de ZIP genera evidencia diagnóstica y no publica geometría industrial ni calibración metrológica.",
                 12, false);
         warning.setTextColor(Color.DKGRAY);
         warning.setPadding(0, dp(15), 0, 0);
@@ -129,7 +142,10 @@ public final class LauncherActivity extends Activity {
         final EditText ot = input("OT (opcional)", InputType.TYPE_CLASS_TEXT);
         final EditText length = input("Largo real del manto en mm (obligatorio)",
                 InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        form.addView(label); form.addView(code); form.addView(ot); form.addView(length);
+        form.addView(label);
+        form.addView(code);
+        form.addView(ot);
+        form.addView(length);
 
         final AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Nueva sesión")
@@ -193,7 +209,8 @@ public final class LauncherActivity extends Activity {
             Toast.makeText(this, "Ya se está construyendo un paquete.", Toast.LENGTH_LONG).show();
             return;
         }
-        if (sessionId == null || "standalone".equals(sessionId) || captureStore.getSession(sessionId) == null) {
+        if (sessionId == null || "standalone".equals(sessionId)
+                || captureStore.getSession(sessionId) == null) {
             Toast.makeText(this, "No existe una sesión para exportar.", Toast.LENGTH_LONG).show();
             return;
         }
@@ -201,7 +218,8 @@ public final class LauncherActivity extends Activity {
         Toast.makeText(this, "Construyendo ZIP auditable…", Toast.LENGTH_LONG).show();
         new Thread(() -> {
             try {
-                final File packageFile = SessionPackageExporter.build(LauncherActivity.this, captureStore, sessionId);
+                final File packageFile = SessionPackageExporter.build(
+                        LauncherActivity.this, captureStore, sessionId);
                 runOnUiThread(() -> {
                     exportInProgress = false;
                     pendingExport = packageFile;
@@ -214,7 +232,8 @@ public final class LauncherActivity extends Activity {
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     exportInProgress = false;
-                    String message = e.getMessage() == null ? "No se pudo construir el ZIP" : e.getMessage();
+                    String message = e.getMessage() == null
+                            ? "No se pudo construir el ZIP" : e.getMessage();
                     Toast.makeText(LauncherActivity.this, message, Toast.LENGTH_LONG).show();
                 });
             }
@@ -234,7 +253,8 @@ public final class LauncherActivity extends Activity {
             while ((read = input.read(buffer)) >= 0) output.write(buffer, 0, read);
             Toast.makeText(this, "ZIP exportado correctamente", Toast.LENGTH_LONG).show();
         } catch (Exception e) {
-            String message = e.getMessage() == null ? "No se pudo guardar el ZIP" : e.getMessage();
+            String message = e.getMessage() == null
+                    ? "No se pudo guardar el ZIP" : e.getMessage();
             Toast.makeText(this, message, Toast.LENGTH_LONG).show();
         } finally {
             pendingExport = null;
@@ -245,12 +265,14 @@ public final class LauncherActivity extends Activity {
         CaptureStore.Session open = captureStore.latestOpen();
         CadCoreStepImporter.Status core = CadCoreStepImporter.status(this);
         stateView.setText((open == null
-                ? "Bases locales listas · evidencia revisionada " + RevisionedKnowledgeOpenHelper.schemaFingerprint()
+                ? "Bases locales listas · evidencia revisionada "
+                + RevisionedKnowledgeOpenHelper.schemaFingerprint()
                 : "Captura abierta: " + open.label + " · " + open.accepted + " fotos aceptadas")
                 + "\nCAD: " + core.runtime
                 + (core.stepReady ? " · STEP NATIVO LISTO" : " · STEP pendiente")
-                + "\nRuntime: safety gate, journal recuperable y campaña física disponibles"
-                + (core.diagnostic == null || core.diagnostic.isEmpty() ? "" : "\n" + core.diagnostic));
+                + "\nRuntime: safety gate, journal recuperable, campaña física y reprocesamiento ZIP disponibles"
+                + (core.diagnostic == null || core.diagnostic.isEmpty()
+                ? "" : "\n" + core.diagnostic));
         stateView.setTextColor(core.stepReady ? Color.rgb(25, 108, 65)
                 : open == null ? Color.rgb(35, 84, 117) : Color.rgb(145, 82, 0));
 
@@ -273,7 +295,8 @@ public final class LauncherActivity extends Activity {
                     + "\nCobertura eje: " + CoveragePlanner.coveredCount(session.lowMask) + "/12"
                     + " · alta: " + CoveragePlanner.coveredCount(session.highMask) + "/12";
             if (session.shellLengthMm != null) {
-                details += String.format(Locale.ROOT, "\nLargo de referencia: %.1f mm", session.shellLengthMm);
+                details += String.format(Locale.ROOT,
+                        "\nLargo de referencia: %.1f mm", session.shellLengthMm);
             }
             card.addView(text(details, 13, false));
             LinearLayout actions = new LinearLayout(this);
@@ -298,10 +321,51 @@ public final class LauncherActivity extends Activity {
         }
     }
 
-    private LinearLayout vertical() { LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL); return layout; }
-    private TextView text(String value, int sp, boolean bold) { TextView view = new TextView(this); view.setText(value); view.setTextSize(sp); view.setTextColor(Color.rgb(35, 39, 42)); if (bold) view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); return view; }
-    private Button button(String label) { Button button = new Button(this); button.setText(label); button.setAllCaps(false); LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.setMargins(0, dp(8), 0, 0); button.setLayoutParams(params); return button; }
-    private EditText input(String hint, int type) { EditText edit = new EditText(this); edit.setHint(hint); edit.setInputType(type); edit.setSingleLine(true); return edit; }
-    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-    private static Double parsePositive(String raw) { if (raw == null || raw.trim().isEmpty()) return null; try { double value = Double.parseDouble(raw.trim().replace(',', '.')); return value > 0.0 && !Double.isNaN(value) && !Double.isInfinite(value) ? value : null; } catch (NumberFormatException ignored) { return null; } }
+    private LinearLayout vertical() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        return layout;
+    }
+
+    private TextView text(String value, int sp, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(sp);
+        view.setTextColor(Color.rgb(35, 39, 42));
+        if (bold) view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        return view;
+    }
+
+    private Button button(String label) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, dp(8), 0, 0);
+        button.setLayoutParams(params);
+        return button;
+    }
+
+    private EditText input(String hint, int type) {
+        EditText edit = new EditText(this);
+        edit.setHint(hint);
+        edit.setInputType(type);
+        edit.setSingleLine(true);
+        return edit;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static Double parsePositive(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return null;
+        try {
+            double value = Double.parseDouble(raw.trim().replace(',', '.'));
+            return value > 0.0 && !Double.isNaN(value) && !Double.isInfinite(value)
+                    ? value : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
 }
