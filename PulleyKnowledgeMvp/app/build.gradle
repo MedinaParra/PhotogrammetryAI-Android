@@ -22,6 +22,8 @@ android {
                 storePassword System.getenv('SKM_ALPHA_KEYSTORE_PASSWORD') ?: 'skm-alpha-test'
                 keyAlias System.getenv('SKM_ALPHA_KEY_ALIAS') ?: 'skm-alpha-lab'
                 keyPassword System.getenv('SKM_ALPHA_KEY_PASSWORD') ?: 'skm-alpha-test'
+                enableV1Signing = true
+                enableV2Signing = true
             }
         }
     }
@@ -31,9 +33,6 @@ android {
             if (System.getenv('SKM_ALPHA_KEYSTORE_PATH')) {
                 signingConfig signingConfigs.alphaLab
             }
-            // Preserve both schemes so CI and Android can verify the same stable Lab certificate.
-            v1SigningEnabled true
-            v2SigningEnabled true
         }
     }
 
