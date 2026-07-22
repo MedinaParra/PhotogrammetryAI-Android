@@ -31,6 +31,9 @@ android {
             if (System.getenv('SKM_ALPHA_KEYSTORE_PATH')) {
                 signingConfig signingConfigs.alphaLab
             }
+            // Preserve both schemes so CI and Android can verify the same stable Lab certificate.
+            v1SigningEnabled true
+            v2SigningEnabled true
         }
     }
 
