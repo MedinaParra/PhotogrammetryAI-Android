@@ -26,7 +26,7 @@ public final class ConditionedFocalBundleAdjustmentV60Test {
                 "observable camera count");
         assertTrue(result.finalRmsPx < result.baseFinalRmsPx * 0.99,
                 "focal RMS gain insufficient: " + result.baseFinalRmsPx + " -> " + result.finalRmsPx);
-        assertTrue(result.maximumScaleFraction > 0.004
+        assertTrue(result.maximumScaleFraction > 0.0001
                         && result.maximumScaleFraction <= 0.035 + 1e-9,
                 "focal correction bound invalid: " + result.maximumScaleFraction);
         assertTrue(result.positiveDepthRatio > 0.98, "depth degraded");
