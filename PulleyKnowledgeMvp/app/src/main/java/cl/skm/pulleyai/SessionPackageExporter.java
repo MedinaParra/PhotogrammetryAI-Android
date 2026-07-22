@@ -16,7 +16,7 @@ import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-/** Creates a portable package using only the active committed runtime evidence generation. */
+/** Creates a portable package only after verifying the active committed runtime generation. */
 public final class SessionPackageExporter {
     private SessionPackageExporter() {}
 
@@ -33,10 +33,20 @@ public final class SessionPackageExporter {
         File sessionDir = store.sessionDir(sessionId);
         File activeRuntime = RuntimeEvidenceTransactionCore.activeDirectory(sessionDir);
         String activeGeneration = activeRuntime == null ? null : activeRuntime.getName();
+        RuntimeGenerationIntegrityCore.Result integrity = null;
+        if (activeRuntime != null) {
+            integrity = RuntimeGenerationIntegrityCore.verify(activeRuntime);
+            if (!integrity.valid) {
+                throw new IllegalStateException(
+                        "Exportación bloqueada: la generación runtime no supera integridad: "
+                                + integrity.issues);
+            }
+        }
         try (ZipOutputStream zip = new ZipOutputStream(
                 new BufferedOutputStream(new FileOutputStream(output)))) {
-            putText(zip, "manifest.json", manifest(session, frames, activeGeneration));
+            putText(zip, "manifest.json", manifest(session, frames, activeGeneration, integrity));
             if (activeRuntime != null) {
+                putText(zip, "export_integrity_verification.json", integrity.canonicalJson());
                 copyDirectory(zip, activeRuntime, activeRuntime, "runtime/");
                 copyIfExists(zip, new File(activeRuntime, "overlap_report.json"),
                         "overlap_report.json");
@@ -105,7 +115,8 @@ public final class SessionPackageExporter {
     }
 
     private static String manifest(CaptureStore.Session session, List<CaptureStore.Frame> frames,
-                                   String activeGeneration) {
+                                   String activeGeneration,
+                                   RuntimeGenerationIntegrityCore.Result integrity) {
         long freeBytes = frames.isEmpty() ? 1024L * 1024L * 1024L
                 : new File(frames.get(0).filePath).getUsableSpace();
         CaptureReadiness.Result readiness = CaptureReadiness.evaluate(
@@ -113,7 +124,7 @@ public final class SessionPackageExporter {
                 session.shellLengthMm, freeBytes);
         StringBuilder json = new StringBuilder(4096 + frames.size() * 500);
         json.append("{\n");
-        field(json, "schema", "skm-polea-capture/5", true);
+        field(json, "schema", "skm-polea-capture/6", true);
         field(json, "sessionId", session.id, true);
         field(json, "label", session.label, true);
         field(json, "status", session.status, true);
@@ -130,6 +141,10 @@ public final class SessionPackageExporter {
         field(json, "runtimeEvidenceDirectory", "runtime/", true);
         field(json, "runtimeActiveGeneration", activeGeneration, true);
         field(json, "runtimeEvidenceMode", activeGeneration == null ? "LEGACY" : "COMMITTED_GENERATION", true);
+        field(json, "runtimeIntegrityVerified", Boolean.toString(integrity != null && integrity.valid), true, false);
+        number(json, "runtimeIntegrityFiles", integrity == null ? 0 : integrity.verifiedFiles, true);
+        field(json, "runtimeGenerationManifestSha256",
+                integrity == null ? null : integrity.manifestSha256, true);
         field(json, "runtimeBudgetMs", "180000", true, false);
         json.append("  \"readinessSummary\": \"").append(escape(readiness.summary())).append("\",\n");
         json.append("  \"frames\": [\n");
