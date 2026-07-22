@@ -1,5 +1,7 @@
 package cl.skm.pulleyai;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -7,6 +9,8 @@ import java.util.List;
 
 /** Recovers calibrated two-view rotation and translation direction with a cheirality test. */
 public final class EssentialPoseCore {
+    private static final Method CHECKPOINT = findCheckpoint();
+
     private EssentialPoseCore() {
     }
 
@@ -16,15 +20,16 @@ public final class EssentialPoseCore {
                 || first == null || second == null || !first.valid() || !second.valid()) {
             return Result.failed("MISSING_INTRINSICS_OR_INLIERS");
         }
+        checkpoint("ESSENTIAL_INPUT_READY");
         double[][] k1 = first.matrix();
         double[][] k2 = second.matrix();
         double[][] essential = multiply(transpose(k2), multiply(fundamental, k1));
-        Svd3 svd = svd3(essential);
+        Svd3 svd = svd3(essential, "ESSENTIAL_INITIAL_SVD");
         if (svd == null) return Result.failed("ESSENTIAL_SVD_FAILED");
         double sigma = (svd.s[0] + svd.s[1]) * 0.5;
         double[][] corrected = multiply(svd.u,
                 multiply(new double[][]{{sigma, 0, 0}, {0, sigma, 0}, {0, 0, 0}}, transpose(svd.v)));
-        Svd3 poseSvd = svd3(corrected);
+        Svd3 poseSvd = svd3(corrected, "ESSENTIAL_POSE_SVD");
         if (poseSvd == null) return Result.failed("ESSENTIAL_DECOMPOSITION_FAILED");
         double[][] u = poseSvd.u;
         double[][] v = poseSvd.v;
@@ -38,11 +43,12 @@ public final class EssentialPoseCore {
         double[] t = {u[0][2], u[1][2], u[2][2]};
         normalize(t);
 
+        checkpoint("ESSENTIAL_CANDIDATES_START");
         Candidate[] candidates = {
-                evaluate(r1, t, pairs, inlierIndices, first, second),
-                evaluate(r1, negate(t), pairs, inlierIndices, first, second),
-                evaluate(r2, t, pairs, inlierIndices, first, second),
-                evaluate(r2, negate(t), pairs, inlierIndices, first, second)
+                evaluate(r1, t, pairs, inlierIndices, first, second, "ESSENTIAL_CANDIDATE_R1_T"),
+                evaluate(r1, negate(t), pairs, inlierIndices, first, second, "ESSENTIAL_CANDIDATE_R1_NEG_T"),
+                evaluate(r2, t, pairs, inlierIndices, first, second, "ESSENTIAL_CANDIDATE_R2_T"),
+                evaluate(r2, negate(t), pairs, inlierIndices, first, second, "ESSENTIAL_CANDIDATE_R2_NEG_T")
         };
         Candidate best = candidates[0];
         for (int i = 1; i < candidates.length; i++) {
@@ -55,6 +61,7 @@ public final class EssentialPoseCore {
         String status = best.positiveCount >= 20 && positiveRatio >= 0.70 && best.medianParallaxDegrees >= 0.35
                 ? "STRONG" : best.positiveCount >= 8 && positiveRatio >= 0.55 && best.medianParallaxDegrees >= 0.15
                 ? "USABLE" : "WEAK";
+        checkpoint("ESSENTIAL_COMPLETE");
         return new Result(true, status, corrected, best.rotation, best.translation,
                 best.positiveCount, best.testedCount, positiveRatio,
                 best.medianParallaxDegrees, rotationDegrees);
@@ -62,19 +69,21 @@ public final class EssentialPoseCore {
 
     private static Candidate evaluate(double[][] rotation, double[] translation,
                                       List<FundamentalMatrixCore.PointPair> pairs,
-                                      List<Integer> indices, Intrinsics first, Intrinsics second) {
+                                      List<Integer> indices, Intrinsics first, Intrinsics second,
+                                      String stage) {
         int limit = Math.min(indices.size(), 80);
         int positive = 0;
         int tested = 0;
         List<Double> parallaxes = new ArrayList<Double>();
         for (int sample = 0; sample < limit; sample++) {
+            if ((sample & 7) == 0) checkpoint(stage + "_" + sample);
             int index = indices.get(sample * indices.size() / limit);
             FundamentalMatrixCore.PointPair pair = pairs.get(index);
             double x1 = (pair.x - first.cx) / first.fx;
             double y1 = (pair.y - first.cy) / first.fy;
             double x2 = (pair.u - second.cx) / second.fx;
             double y2 = (pair.v - second.cy) / second.fy;
-            double[] point = triangulate(x1, y1, x2, y2, rotation, translation);
+            double[] point = triangulate(x1, y1, x2, y2, rotation, translation, stage + "_DLT_" + sample);
             if (point == null) continue;
             tested++;
             double z1 = point[2];
@@ -93,7 +102,8 @@ public final class EssentialPoseCore {
     }
 
     private static double[] triangulate(double x1, double y1, double x2, double y2,
-                                        double[][] r, double[] t) {
+                                        double[][] r, double[] t, String stage) {
+        checkpoint(stage + "_START");
         double[][] a = new double[4][4];
         a[0][0] = -1; a[0][2] = x1;
         a[1][1] = -1; a[1][2] = y1;
@@ -104,7 +114,7 @@ public final class EssentialPoseCore {
         a[2][3] = x2 * t[2] - t[0];
         a[3][3] = y2 * t[2] - t[1];
         double[][] ata = multiply(transpose(a), a);
-        Eigen eigen = jacobi(ata, 80);
+        Eigen eigen = jacobi(ata, 80, stage + "_EIGEN");
         if (eigen == null) return null;
         int smallest = 0;
         for (int i = 1; i < 4; i++) if (eigen.values[i] < eigen.values[smallest]) smallest = i;
@@ -114,9 +124,10 @@ public final class EssentialPoseCore {
                 eigen.vectors[1][smallest] / w, eigen.vectors[2][smallest] / w};
     }
 
-    private static Svd3 svd3(double[][] matrix) {
+    private static Svd3 svd3(double[][] matrix, String stage) {
+        checkpoint(stage + "_START");
         double[][] mtm = multiply(transpose(matrix), matrix);
-        Eigen eigen = jacobi(mtm, 100);
+        Eigen eigen = jacobi(mtm, 100, stage + "_EIGEN");
         if (eigen == null) return null;
         List<Integer> order = new ArrayList<Integer>();
         for (int i = 0; i < 3; i++) order.add(i);
@@ -212,7 +223,7 @@ public final class EssentialPoseCore {
                 ? (values.get(mid - 1) + values.get(mid)) * 0.5 : values.get(mid);
     }
 
-    private static Eigen jacobi(double[][] source, int sweeps) {
+    private static Eigen jacobi(double[][] source, int sweeps, String stage) {
         int n = source.length;
         double[][] a = new double[n][n];
         double[][] v = new double[n][n];
@@ -222,6 +233,7 @@ public final class EssentialPoseCore {
         }
         int max = Math.max(20, sweeps * n * n);
         for (int iteration = 0; iteration < max; iteration++) {
+            if ((iteration & 15) == 0) checkpoint(stage + "_" + iteration);
             int p = 0, q = 1;
             double largest = 0.0;
             for (int i = 0; i < n; i++) {
@@ -266,6 +278,29 @@ public final class EssentialPoseCore {
         for (int i = 0; i < m.length; i++)
             for (int j = 0; j < m[0].length; j++) out[j][i] = m[i][j];
         return out;
+    }
+
+    private static Method findCheckpoint() {
+        try {
+            Class<?> bridge = Class.forName("cl.skm.pulleyai.RuntimeCancellationBridge");
+            return bridge.getMethod("checkpoint", String.class);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    private static void checkpoint(String stage) {
+        if (CHECKPOINT == null) return;
+        try {
+            CHECKPOINT.invoke(null, stage);
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            throw new IllegalStateException("geometry checkpoint failed", cause);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("geometry checkpoint unavailable", error);
+        }
     }
 
     public static final class Intrinsics {
