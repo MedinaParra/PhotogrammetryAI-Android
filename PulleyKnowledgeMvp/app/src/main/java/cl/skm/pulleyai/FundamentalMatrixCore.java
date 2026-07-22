@@ -1,5 +1,7 @@
 package cl.skm.pulleyai;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -7,6 +9,8 @@ import java.util.List;
 
 /** Normalized eight-point fundamental matrix with deterministic RANSAC and Sampson error. */
 public final class FundamentalMatrixCore {
+    private static final Method CHECKPOINT = findCheckpoint();
+
     private FundamentalMatrixCore() {
     }
 
@@ -20,6 +24,7 @@ public final class FundamentalMatrixCore {
         double bestError = Double.POSITIVE_INFINITY;
         int loops = Math.max(80, Math.min(2500, iterations));
         for (int it = 0; it < loops; it++) {
+            if ((it & 15) == 0) checkpoint("FUNDAMENTAL_RANSAC_" + it);
             List<PointPair> sample = new ArrayList<PointPair>(8);
             int[] indices = new int[8];
             for (int k = 0; k < 8; k++) {
@@ -31,11 +36,12 @@ public final class FundamentalMatrixCore {
                 } while (contains(indices, k, indices[k]) && attempts < n * 2);
                 sample.add(pairs.get(indices[k]));
             }
-            double[][] f = fit(sample);
+            double[][] f = fit(sample, "FUNDAMENTAL_SAMPLE_FIT_" + it);
             if (f == null) continue;
             List<Integer> inliers = new ArrayList<Integer>();
             double error = 0.0;
             for (int i = 0; i < n; i++) {
+                if ((i & 127) == 0) checkpoint("FUNDAMENTAL_SCORE_" + it + "_" + i);
                 double d = sampsonSquared(f, pairs.get(i));
                 if (Double.isFinite(d) && d <= threshold2) {
                     inliers.add(i);
@@ -49,14 +55,16 @@ public final class FundamentalMatrixCore {
                 bestError = error;
             }
         }
+        checkpoint("FUNDAMENTAL_REFINEMENT_START");
         if (bestF == null || bestInliers.size() < 8) return Result.failed("NO_MODEL");
         List<PointPair> refinement = new ArrayList<PointPair>(bestInliers.size());
         for (int index : bestInliers) refinement.add(pairs.get(index));
-        double[][] refined = fit(refinement);
+        double[][] refined = fit(refinement, "FUNDAMENTAL_REFINEMENT_FIT");
         if (refined != null) bestF = refined;
         List<Integer> finalInliers = new ArrayList<Integer>();
         double sum = 0.0;
         for (int i = 0; i < n; i++) {
+            if ((i & 127) == 0) checkpoint("FUNDAMENTAL_FINAL_SCORE_" + i);
             double d = sampsonSquared(bestF, pairs.get(i));
             if (Double.isFinite(d) && d <= threshold2) {
                 finalInliers.add(i);
@@ -68,15 +76,19 @@ public final class FundamentalMatrixCore {
         String status = finalInliers.size() >= 30 && ratio >= 0.45 && rms <= thresholdPx * 0.8
                 ? "STRONG" : finalInliers.size() >= 12 && ratio >= 0.25 && rms <= thresholdPx
                 ? "USABLE" : "WEAK";
+        checkpoint("FUNDAMENTAL_COMPLETE");
         return new Result(true, status, bestF, finalInliers, ratio, rms);
     }
 
-    private static double[][] fit(List<PointPair> pairs) {
+    private static double[][] fit(List<PointPair> pairs, String stage) {
         if (pairs.size() < 8) return null;
-        Normalization n1 = normalize(pairs, false);
-        Normalization n2 = normalize(pairs, true);
+        checkpoint(stage + "_NORMALIZE");
+        Normalization n1 = normalize(pairs, false, stage + "_FIRST");
+        Normalization n2 = normalize(pairs, true, stage + "_SECOND");
         double[][] ata = new double[9][9];
+        int pairIndex = 0;
         for (PointPair pair : pairs) {
+            if ((pairIndex++ & 127) == 0) checkpoint(stage + "_ACCUMULATE_" + pairIndex);
             double x = n1.scale * pair.x + n1.tx;
             double y = n1.scale * pair.y + n1.ty;
             double u = n2.scale * pair.u + n2.tx;
@@ -89,13 +101,13 @@ public final class FundamentalMatrixCore {
                 }
             }
         }
-        Eigen eigen = jacobi(ata, 100);
+        Eigen eigen = jacobi(ata, 100, stage + "_EIGEN");
         if (eigen == null) return null;
         int smallest = 0;
         for (int i = 1; i < 9; i++) if (eigen.values[i] < eigen.values[smallest]) smallest = i;
         double[][] f = new double[3][3];
         for (int i = 0; i < 9; i++) f[i / 3][i % 3] = eigen.vectors[i][smallest];
-        f = rank2(f);
+        f = rank2(f, stage + "_RANK2");
         if (f == null) return null;
         double[][] t1 = {{n1.scale, 0, n1.tx}, {0, n1.scale, n1.ty}, {0, 0, 1}};
         double[][] t2 = {{n2.scale, 0, n2.tx}, {0, n2.scale, n2.ty}, {0, 0, 1}};
@@ -106,17 +118,21 @@ public final class FundamentalMatrixCore {
         return denormalized;
     }
 
-    private static Normalization normalize(List<PointPair> pairs, boolean second) {
+    private static Normalization normalize(List<PointPair> pairs, boolean second, String stage) {
         double mx = 0.0;
         double my = 0.0;
+        int index = 0;
         for (PointPair pair : pairs) {
+            if ((index++ & 255) == 0) checkpoint(stage + "_MEAN_" + index);
             mx += second ? pair.u : pair.x;
             my += second ? pair.v : pair.y;
         }
         mx /= pairs.size();
         my /= pairs.size();
         double meanDistance = 0.0;
+        index = 0;
         for (PointPair pair : pairs) {
+            if ((index++ & 255) == 0) checkpoint(stage + "_DISTANCE_" + index);
             double x = (second ? pair.u : pair.x) - mx;
             double y = (second ? pair.v : pair.y) - my;
             meanDistance += Math.sqrt(x * x + y * y);
@@ -126,9 +142,10 @@ public final class FundamentalMatrixCore {
         return new Normalization(scale, -scale * mx, -scale * my);
     }
 
-    private static double[][] rank2(double[][] f) {
+    private static double[][] rank2(double[][] f, String stage) {
+        checkpoint(stage + "_START");
         double[][] ftf = multiply(transpose(f), f);
-        Eigen eigen = jacobi(ftf, 80);
+        Eigen eigen = jacobi(ftf, 80, stage + "_EIGEN");
         if (eigen == null) return null;
         List<Integer> order = new ArrayList<Integer>();
         for (int i = 0; i < 3; i++) order.add(i);
@@ -182,7 +199,7 @@ public final class FundamentalMatrixCore {
         return denominator < 1e-15 ? Double.POSITIVE_INFINITY : numerator * numerator / denominator;
     }
 
-    private static Eigen jacobi(double[][] source, int sweeps) {
+    private static Eigen jacobi(double[][] source, int sweeps, String stage) {
         int n = source.length;
         double[][] a = new double[n][n];
         double[][] v = new double[n][n];
@@ -192,6 +209,7 @@ public final class FundamentalMatrixCore {
         }
         int maxIterations = Math.max(20, sweeps * n * n);
         for (int iteration = 0; iteration < maxIterations; iteration++) {
+            if ((iteration & 15) == 0) checkpoint(stage + "_" + iteration);
             int p = 0;
             int q = 1;
             double largest = 0.0;
@@ -265,6 +283,29 @@ public final class FundamentalMatrixCore {
         value ^= value >>> 7;
         value ^= value << 17;
         return value;
+    }
+
+    private static Method findCheckpoint() {
+        try {
+            Class<?> bridge = Class.forName("cl.skm.pulleyai.RuntimeCancellationBridge");
+            return bridge.getMethod("checkpoint", String.class);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    private static void checkpoint(String stage) {
+        if (CHECKPOINT == null) return;
+        try {
+            CHECKPOINT.invoke(null, stage);
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            throw new IllegalStateException("geometry checkpoint failed", cause);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("geometry checkpoint unavailable", error);
+        }
     }
 
     private static final class Normalization {
