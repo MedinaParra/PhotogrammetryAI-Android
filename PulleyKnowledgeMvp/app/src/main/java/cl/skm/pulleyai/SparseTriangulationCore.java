@@ -1,11 +1,15 @@
 package cl.skm.pulleyai;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 /** Triangulates calibrated two-view inliers and filters them by depth, parallax and reprojection. */
 public final class SparseTriangulationCore {
+    private static final Method CHECKPOINT = findCheckpoint();
+
     private SparseTriangulationCore() {
     }
 
@@ -20,11 +24,14 @@ public final class SparseTriangulationCore {
                 || pose.translation == null || inlierIndices.size() < 4) {
             return Result.failed("MISSING_POSE_OR_INLIERS");
         }
+        checkpoint("SPARSE_TRIANGULATION_START");
         List<Point3> points = new ArrayList<Point3>();
         double errorSum = 0.0;
         int tested = 0;
         int positive = 0;
+        int sequence = 0;
         for (int index : inlierIndices) {
+            if ((sequence++ & 15) == 0) checkpoint("SPARSE_TRIANGULATION_POINT_" + sequence);
             if (index < 0 || index >= pairs.size()) continue;
             tested++;
             FundamentalMatrixCore.PointPair pair = pairs.get(index);
@@ -32,7 +39,8 @@ public final class SparseTriangulationCore {
             double y1 = (pair.y - first.cy) / first.fy;
             double x2 = (pair.u - second.cx) / second.fx;
             double y2 = (pair.v - second.cy) / second.fy;
-            double[] point = dlt(x1, y1, x2, y2, pose.rotation, pose.translation);
+            double[] point = dlt(x1, y1, x2, y2, pose.rotation, pose.translation,
+                    "SPARSE_DLT_" + sequence);
             if (point == null || !finite(point)) continue;
             double[] inSecond = transform(pose.rotation, pose.translation, point);
             if (point[2] <= 1e-7 || inSecond[2] <= 1e-7) continue;
@@ -51,11 +59,13 @@ public final class SparseTriangulationCore {
                 && rms <= maxReprojectionPx * 0.65 ? "STRONG"
                 : points.size() >= 10 && positiveRatio >= 0.55
                 && rms <= maxReprojectionPx ? "USABLE" : "WEAK";
+        checkpoint("SPARSE_TRIANGULATION_COMPLETE");
         return new Result(true, status, tested, positive, positiveRatio, rms, points);
     }
 
     private static double[] dlt(double x1, double y1, double x2, double y2,
-                                double[][] rotation, double[] translation) {
+                                double[][] rotation, double[] translation, String stage) {
+        checkpoint(stage + "_START");
         double[][] a = new double[4][4];
         a[0][0] = -1.0;
         a[0][2] = x1;
@@ -68,7 +78,7 @@ public final class SparseTriangulationCore {
         a[2][3] = x2 * translation[2] - translation[0];
         a[3][3] = y2 * translation[2] - translation[1];
         double[][] ata = multiply(transpose(a), a);
-        Eigen eigen = jacobi(ata, 100);
+        Eigen eigen = jacobi(ata, 100, stage + "_EIGEN");
         if (eigen == null) return null;
         int smallest = 0;
         for (int i = 1; i < 4; i++) {
@@ -144,7 +154,7 @@ public final class SparseTriangulationCore {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
-    private static Eigen jacobi(double[][] source, int sweeps) {
+    private static Eigen jacobi(double[][] source, int sweeps, String stage) {
         int n = source.length;
         double[][] matrix = new double[n][n];
         double[][] vectors = new double[n][n];
@@ -153,6 +163,7 @@ public final class SparseTriangulationCore {
             vectors[i][i] = 1.0;
         }
         for (int iteration = 0; iteration < sweeps * n * n; iteration++) {
+            if ((iteration & 15) == 0) checkpoint(stage + "_" + iteration);
             int p = 0;
             int q = 1;
             double largest = 0.0;
@@ -219,6 +230,29 @@ public final class SparseTriangulationCore {
             }
         }
         return result;
+    }
+
+    private static Method findCheckpoint() {
+        try {
+            Class<?> bridge = Class.forName("cl.skm.pulleyai.RuntimeCancellationBridge");
+            return bridge.getMethod("checkpoint", String.class);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    private static void checkpoint(String stage) {
+        if (CHECKPOINT == null) return;
+        try {
+            CHECKPOINT.invoke(null, stage);
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            if (cause instanceof Error) throw (Error) cause;
+            throw new IllegalStateException("geometry checkpoint failed", cause);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("geometry checkpoint unavailable", error);
+        }
     }
 
     private static final class Eigen {
