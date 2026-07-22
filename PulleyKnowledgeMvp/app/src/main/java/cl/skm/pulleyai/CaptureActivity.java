@@ -27,7 +27,7 @@ import java.io.FileOutputStream;
 import java.security.MessageDigest;
 import java.util.Locale;
 
-/** Industrial landscape capture station. It records evidence without claiming reconstruction results. */
+/** Industrial landscape capture station with fail-closed two-ring guidance. */
 public final class CaptureActivity extends Activity {
     public static final String EXTRA_SESSION_ID = "capture_session_id";
     private static final int CAMERA_PERMISSION = 4102;
@@ -53,6 +53,7 @@ public final class CaptureActivity extends Activity {
     private String pendingBand;
     private boolean cameraReady;
     private boolean processing;
+    private boolean autoSwitchedToHigh;
     private File pendingExport;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Runnable ticker = new Runnable() {
@@ -127,7 +128,8 @@ public final class CaptureActivity extends Activity {
         panel.setGravity(Gravity.CENTER_HORIZONTAL);
         panel.setPadding(dp(12), dp(10), dp(12), dp(10));
         panel.setBackgroundColor(Color.rgb(25, 31, 35));
-        int panelWidth = Math.max(dp(260), Math.min(dp(330), getResources().getDisplayMetrics().widthPixels / 3));
+        int panelWidth = Math.max(dp(260), Math.min(dp(330),
+                getResources().getDisplayMetrics().widthPixels / 3));
         root.addView(panel, new LinearLayout.LayoutParams(panelWidth, -1));
 
         TextView title = label("CAPTURA INDUSTRIAL", 15, Color.rgb(135, 210, 255));
@@ -149,7 +151,8 @@ public final class CaptureActivity extends Activity {
         bandButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) {
                 band = "LOW".equals(band) ? "HIGH" : "LOW";
-                bandButton.setText("HIGH".equals(band) ? "ALTURA: ALTA" : "ALTURA: EJE");
+                if ("HIGH".equals(band)) autoSwitchedToHigh = true;
+                updateBandButton();
                 refresh();
             }
         });
@@ -164,7 +167,7 @@ public final class CaptureActivity extends Activity {
         });
         panel.addView(captureButton);
 
-        overlapButton = button("VERIFICAR SOLAPE", 48);
+        overlapButton = button("COMPLETE AMBOS ANILLOS", 48);
         overlapButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View view) { analyzeOverlap(); }
         });
@@ -183,7 +186,8 @@ public final class CaptureActivity extends Activity {
         panel.addView(finish);
 
         TextView instruction = label(
-                "Mantenga distancia constante, sin zoom digital y con solape entre vistas. Capture ambos anillos completos.",
+                "Mantenga la polea completa en el centro, avance físicamente y capture ambos anillos. " +
+                        "La app rechaza sectores repetidos y bordes obstruidos.",
                 11, Color.LTGRAY);
         instruction.setPadding(0, dp(8), 0, 0);
         panel.addView(instruction);
@@ -227,6 +231,13 @@ public final class CaptureActivity extends Activity {
             status.setText(stability.reason);
             return;
         }
+        int sector = CoveragePlanner.sectorForYaw(pose.yaw);
+        if (store.acceptedInSector(sessionId, band, sector)
+                >= GuidedCaptureAdmissionCore.MAX_ACCEPTED_PER_CELL) {
+            status.setText("SECTOR COMPLETO · avance físicamente al siguiente sector");
+            status.setTextColor(Color.rgb(255, 190, 100));
+            return;
+        }
         if (freeBytes() < CaptureReadiness.MIN_FREE_BYTES) {
             showError("Espacio insuficiente: libere al menos 250 MB");
             return;
@@ -235,7 +246,7 @@ public final class CaptureActivity extends Activity {
         pendingBand = band;
         processing = true;
         refresh();
-        status.setText("Capturando y evaluando calidad…");
+        status.setText("Capturando y evaluando nitidez, obstrucción y diversidad…");
         if (!camera.capture()) {
             processing = false;
             status.setText("La cámara todavía no está lista");
@@ -266,8 +277,12 @@ public final class CaptureActivity extends Activity {
                 @Override public void run() {
                     processing = false;
                     status.setText((quality.accepted() ? "ACEPTADA · " : "RECHAZADA · ") + quality.reason
-                            + String.format(Locale.ROOT, "\nNitidez %.0f · luz %.0f · %s",
-                            quality.blurScore, quality.meanLuma, CoveragePlanner.sectorLabel(sector)));
+                            + String.format(Locale.ROOT,
+                            "\nNitidez %.0f · luz %.0f · obstrucción %.0f%% · centro %.0f%% · %s",
+                            quality.blurScore, quality.meanLuma,
+                            quality.borderObstructionScore * 100.0,
+                            quality.centerDetailRatio * 100.0,
+                            CoveragePlanner.sectorLabel(sector)));
                     status.setTextColor(quality.accepted()
                             ? Color.rgb(130, 235, 155)
                             : Color.rgb(255, 155, 130));
@@ -291,6 +306,14 @@ public final class CaptureActivity extends Activity {
     private void refresh() {
         session = store.getSession(sessionId);
         if (session == null || poseTracker == null || guide == null) return;
+        boolean lowComplete = CoveragePlanner.isComplete(session.lowMask);
+        boolean highComplete = CoveragePlanner.isComplete(session.highMask);
+        if (lowComplete && !highComplete && "LOW".equals(band) && !autoSwitchedToHigh) {
+            band = "HIGH";
+            autoSwitchedToHigh = true;
+            updateBandButton();
+        }
+
         DevicePoseTracker.Snapshot pose = poseTracker.snapshot();
         LandscapeCaptureMath.Stability stability = LandscapeCaptureMath.evaluate(
                 pose.pitch, pose.roll, pose.motion,
@@ -300,10 +323,14 @@ public final class CaptureActivity extends Activity {
         int next = CoveragePlanner.nextMissingSector(activeMask, currentSector);
         guide.update(activeMask, currentSector, next, band, stability.ready());
 
+        String nextText = next >= 0
+                ? CoveragePlanner.sectorLabel(next)
+                : GuidedCaptureAdmissionCore.nextInstruction(
+                session.lowMask, session.highMask, band, session.accepted, session.overlapReady);
         coverage.setText(session.label + "\nAceptadas " + session.accepted + " · rechazadas " + session.rejected
                 + "\nEje " + CoveragePlanner.coveredCount(session.lowMask) + "/12 · alta "
                 + CoveragePlanner.coveredCount(session.highMask) + "/12"
-                + "\nSiguiente: " + CoveragePlanner.sectorLabel(next)
+                + "\nSiguiente: " + nextText
                 + "\nSolape: " + session.overlapStatus
                 + (session.overlapUpdatedAt == null ? "" : " · pares " + session.overlapUsablePairs));
         poseHint.setText(stability.reason + String.format(Locale.ROOT,
@@ -313,11 +340,19 @@ public final class CaptureActivity extends Activity {
                 : Color.rgb(255, 190, 100));
         long free = freeBytes();
         storage.setText("Espacio libre: " + formatBytes(free));
-        storage.setTextColor(free >= CaptureReadiness.MIN_FREE_BYTES ? Color.LTGRAY : Color.rgb(255, 145, 125));
+        storage.setTextColor(free >= CaptureReadiness.MIN_FREE_BYTES
+                ? Color.LTGRAY : Color.rgb(255, 145, 125));
+
+        int acceptedInSector = store.acceptedInSector(sessionId, band, currentSector);
+        boolean sectorOpen = acceptedInSector < GuidedCaptureAdmissionCore.MAX_ACCEPTED_PER_CELL;
         captureButton.setEnabled(cameraReady && !processing && stability.ready()
-                && free >= CaptureReadiness.MIN_FREE_BYTES);
-        captureButton.setText(processing ? "PROCESANDO…" : "CAPTURAR");
-        overlapButton.setEnabled(!processing && session.accepted >= 2);
+                && free >= CaptureReadiness.MIN_FREE_BYTES && sectorOpen);
+        captureButton.setText(processing ? "PROCESANDO…"
+                : sectorOpen ? "CAPTURAR" : "SECTOR COMPLETO");
+
+        boolean ringsComplete = lowComplete && highComplete;
+        overlapButton.setEnabled(!processing && ringsComplete && session.accepted >= 24);
+        overlapButton.setText(ringsComplete ? "VERIFICAR SOLAPE" : "COMPLETE AMBOS ANILLOS");
         exportButton.setEnabled(!processing && session.accepted + session.rejected > 0);
     }
 
@@ -327,20 +362,32 @@ public final class CaptureActivity extends Activity {
         CaptureReadiness.Result readiness = CaptureReadiness.evaluate(
                 session.accepted, session.rejected, session.lowMask, session.highMask,
                 session.shellLengthMm, freeBytes(), true, session.overlapReady, session.overlapStatus);
-        new AlertDialog.Builder(this)
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
                 .setTitle(readiness.ready() ? "Recorrido listo" : "Recorrido incompleto")
-                .setMessage(readiness.summary()
-                        + "\n\nLa sesión se puede cerrar, pero la reconstrucción permanecerá bloqueada si existen bloqueos.")
-                .setPositiveButton("FINALIZAR", (dialog, which) -> {
-                    store.finishSession(sessionId);
-                    finish();
-                })
-                .setNegativeButton("SEGUIR", null)
-                .show();
+                .setMessage(readiness.summary() + (readiness.ready()
+                        ? "\n\nLa sesión puede cerrarse y continuar a reconstrucción."
+                        : "\n\nNo se marcará como finalizada. Puede salir y continuar esta misma sesión después."));
+        if (readiness.ready()) {
+            builder.setPositiveButton("FINALIZAR", (dialog, which) -> {
+                if (store.finishSession(sessionId)) finish();
+                else showError("La sesión cambió y ya no cumple los requisitos de finalización");
+            }).setNegativeButton("SEGUIR", null);
+        } else {
+            builder.setPositiveButton("SEGUIR CAPTURANDO", null)
+                    .setNegativeButton("SALIR SIN FINALIZAR", (dialog, which) -> finish());
+        }
+        builder.show();
     }
 
     private void analyzeOverlap() {
         if (processing) return;
+        session = store.getSession(sessionId);
+        if (session == null) return;
+        if (!CoveragePlanner.isComplete(session.lowMask)
+                || !CoveragePlanner.isComplete(session.highMask)) {
+            showError("Complete los anillos EJE y ALTA antes de verificar el solape");
+            return;
+        }
         processing = true;
         status.setText("Analizando correspondencias y solape…");
         refresh();
@@ -441,6 +488,10 @@ public final class CaptureActivity extends Activity {
                     .setNegativeButton("SALIR", (dialog, which) -> finish())
                     .show();
         }
+    }
+
+    private void updateBandButton() {
+        bandButton.setText("HIGH".equals(band) ? "ALTURA: ALTA" : "ALTURA: EJE");
     }
 
     private long freeBytes() {
