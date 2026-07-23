@@ -17,7 +17,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
 
-/** UI for importing an exported capture ZIP and producing pair-level diagnostics. */
+/** UI for importing an exported capture ZIP and producing multiscale pair diagnostics. */
 public final class ZipReprocessActivity extends Activity {
     private static final int OPEN_ZIP = 4510;
     private static final int SAVE_JSON = 4511;
@@ -28,7 +28,7 @@ public final class ZipReprocessActivity extends Activity {
     private Button saveJsonButton;
     private Button savePackageButton;
     private volatile boolean processing;
-    private PortableZipReprocessor.Result result;
+    private MultiScaleZipReprocessor.Result result;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -44,12 +44,12 @@ public final class ZipReprocessActivity extends Activity {
         root.setBackgroundColor(Color.rgb(244, 247, 249));
         scroll.addView(root);
 
-        TextView title = text("REPROCESAR ZIP DE CAPTURA", 25, true);
+        TextView title = text("REPROCESAR ZIP MULTIESCALA · ALPHA47", 25, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
 
         TextView description = text(
-                "Importa un ZIP exportado por SKM Polea AI, valida SHA-256, vuelve a detectar características y genera un diagnóstico por cada par: matches, razón segundo-mejor, cobertura del objetivo, inliers, RMS y causa de rechazo. No publica geometría industrial.",
+                "Importa un ZIP exportado por SKM Polea AI, valida SHA-256, compara alpha46 y ejecuta una pirámide 1.0/0.8/0.64 con orientación y descriptor binario de 256 bits. El informe separa el grafo primario de los puentes diagnósticos. Los puentes nunca habilitan BA, nube métrica, CAD ni liberación industrial.",
                 14, false);
         description.setPadding(0, dp(5), 0, dp(14));
         root.addView(description);
@@ -63,12 +63,12 @@ public final class ZipReprocessActivity extends Activity {
         selectButton.setOnClickListener(view -> openZipPicker());
         root.addView(selectButton);
 
-        saveJsonButton = button("GUARDAR DIAGNÓSTICO JSON");
+        saveJsonButton = button("GUARDAR DIAGNÓSTICO MULTIESCALA JSON");
         saveJsonButton.setEnabled(false);
         saveJsonButton.setOnClickListener(view -> saveResult(false));
         root.addView(saveJsonButton);
 
-        savePackageButton = button("GUARDAR PAQUETE DE DIAGNÓSTICO ZIP");
+        savePackageButton = button("GUARDAR PAQUETE COMPARATIVO ZIP");
         savePackageButton.setEnabled(false);
         savePackageButton.setOnClickListener(view -> saveResult(true));
         root.addView(savePackageButton);
@@ -95,12 +95,12 @@ public final class ZipReprocessActivity extends Activity {
         selectButton.setEnabled(false);
         saveJsonButton.setEnabled(false);
         savePackageButton.setEnabled(false);
-        status.setText("Abriendo ZIP…");
+        status.setText("Abriendo ZIP y ejecutando comparación alpha46…");
         status.setTextColor(Color.rgb(35, 84, 117));
         new Thread(() -> {
             try {
-                final PortableZipReprocessor.Result completed =
-                        PortableZipReprocessor.process(
+                final MultiScaleZipReprocessor.Result completed =
+                        MultiScaleZipReprocessor.process(
                                 ZipReprocessActivity.this, uri,
                                 message -> runOnUiThread(() -> status.setText(message)));
                 runOnUiThread(() -> {
@@ -110,8 +110,13 @@ public final class ZipReprocessActivity extends Activity {
                     saveJsonButton.setEnabled(true);
                     savePackageButton.setEnabled(true);
                     status.setText(completed.summary);
-                    status.setTextColor(completed.graphConnected
-                            ? Color.rgb(25, 108, 65) : Color.rgb(145, 82, 0));
+                    if (completed.primaryGraphConnected) {
+                        status.setTextColor(Color.rgb(25, 108, 65));
+                    } else if (completed.diagnosticGraphConnected) {
+                        status.setTextColor(Color.rgb(145, 82, 0));
+                    } else {
+                        status.setTextColor(Color.rgb(150, 30, 30));
+                    }
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
@@ -123,11 +128,11 @@ public final class ZipReprocessActivity extends Activity {
                     status.setTextColor(Color.rgb(150, 30, 30));
                 });
             }
-        }, "PortableZipReprocessor").start();
+        }, "MultiScaleZipReprocessor").start();
     }
 
     private void saveResult(boolean packageZip) {
-        PortableZipReprocessor.Result current = result;
+        MultiScaleZipReprocessor.Result current = result;
         if (current == null) return;
         File source = packageZip ? current.packageFile : current.reportFile;
         if (source == null || !source.isFile()) {
@@ -157,7 +162,7 @@ public final class ZipReprocessActivity extends Activity {
             startProcessing(uri);
             return;
         }
-        PortableZipReprocessor.Result current = result;
+        MultiScaleZipReprocessor.Result current = result;
         if (current == null) return;
         File source = requestCode == SAVE_PACKAGE ? current.packageFile
                 : requestCode == SAVE_JSON ? current.reportFile : null;
