@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai.lab'
         minSdk 24
         targetSdk 35
-        versionCode 47
-        versionName '0.18.0-alpha47'
+        versionCode 48
+        versionName '0.18.0-alpha48'
     }
 
     signingConfigs {
@@ -42,11 +42,11 @@ android {
     }
 }
 
-// Alpha47 Lab adds multiscale orientation-normalized ZIP reprocessing and separates primary from diagnostic bridge graphs.
+// Alpha48 Lab persists collision-safe multiview tracks from primary fundamental inliers only.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha47 Lab')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha48 Lab')
     }
     implementation files(cadcoreAar)
 }
