@@ -64,7 +64,7 @@ public final class MultiScaleZipReprocessor {
             alpha46 = PortableZipReprocessor.process(context, sourceUri,
                     new PortableZipReprocessor.Progress() {
                         @Override public void onProgress(String message) {
-                            notify(progress, "alpha46 · " + message);
+                            MultiScaleZipReprocessor.notify(progress, "alpha46 · " + message);
                         }
                     });
         } catch (Exception failure) {
