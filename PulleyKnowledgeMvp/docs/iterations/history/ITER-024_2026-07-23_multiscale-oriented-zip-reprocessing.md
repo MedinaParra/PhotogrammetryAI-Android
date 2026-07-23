@@ -31,13 +31,14 @@ Corregir el sesgo del descriptor fijo Harris/BRIEF frente a cambios de escala y 
 - exportación JSON y ZIP sin incluir fotografías fuente;
 - integración Android, gate v67, workflow y APK alpha47.
 
-## Decisiones fail-closed
+## Cambios y decisiones
 
 - Las aristas `BRIDGE` no ingresan al grafo primario.
 - Las aristas `BRIDGE` no habilitan BA, nube métrica, CAD ni liberación industrial.
 - El reprocesamiento continúa siendo diagnóstico y no publica geometría.
 - La importación verifica esquema, rutas, tamaño y SHA-256 de cada JPEG aceptado.
 - Las fotografías de `demo_3` no se incorporan al repositorio ni al APK.
+- La expansión afín guiada complementa, pero no sustituye, el gate de matriz fundamental.
 
 ## Evidencia y validación
 
@@ -82,3 +83,23 @@ Corregir el sesgo del descriptor fijo Harris/BRIEF frente a cambios de escala y 
 ### ITER-025 — Tracks multivista persistentes desde ZIP importado
 
 Construir tracks únicamente desde inliers de aristas primarias, impedir colisiones de dos observaciones del mismo fotograma, conservar procedencia por par, exportar histograma y tracks cross-ring, y mantener excluidas todas las aristas `BRIDGE` de cualquier reconstrucción geométrica.
+
+## Criterios de entrada y salida
+
+### Entrada
+
+- conservar los 42 gates acumulados;
+- mantener importación ZIP segura y SHA-256 fail-closed;
+- mantener comparación alpha46/alpha47;
+- mantener separado el grafo primario del grafo con puentes diagnósticos;
+- mantener el paquete Lab y su firma estable de prueba;
+- no declarar reconstrucción métrica desde el diagnóstico.
+
+### Salida
+
+- descriptor multiescala orientado integrado en Android;
+- evidencia afín y fundamental persistida por par;
+- grafos primario y diagnóstico exportados por separado;
+- alpha47 Lab compilada con STEP/OCCT y firma verificada;
+- siguiente iteración concreta declarada;
+- uso industrial bloqueado.
