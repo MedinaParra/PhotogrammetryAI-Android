@@ -2,7 +2,6 @@ package cl.skm.pulleyai;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 public final class ImportedComponentGeometryCoreTest {
@@ -21,7 +20,7 @@ public final class ImportedComponentGeometryCoreTest {
 
         ImportedTrackAssemblerCore.Result tracks =
                 ImportedTrackAssemblerCore.assemble(evidence, 3);
-        check(tracks.tracks.size() == 2, "two tracks");
+        check(tracks.tracks.size() == 8, "eight point tracks across two components");
         check(tracks.bridgePairsExcluded == 1, "bridge excluded");
         ImportedSeedGeometryCore.Result seed = new ImportedSeedGeometryCore.Result(
                 true, true, "SEED_GEOMETRY_READY", 1, 7,
