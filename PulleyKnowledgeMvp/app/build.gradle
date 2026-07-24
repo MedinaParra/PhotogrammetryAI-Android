@@ -7,11 +7,11 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'cl.skm.pulleyai.lab'
+        applicationId 'cl.skm.pulleyai.lab2'
         minSdk 24
         targetSdk 35
-        versionCode 48
-        versionName '0.18.0-alpha48'
+        versionCode 49
+        versionName '0.18.0-alpha49'
     }
 
     signingConfigs {
@@ -42,11 +42,11 @@ android {
     }
 }
 
-// Alpha48 Lab persists collision-safe multiview tracks from primary fundamental inliers only.
+// Alpha49 Lab2 canonicalizes field ZIPs and exposes exact import failures before multiscale tracks.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha48 Lab')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha49 Lab2')
     }
     implementation files(cadcoreAar)
 }
