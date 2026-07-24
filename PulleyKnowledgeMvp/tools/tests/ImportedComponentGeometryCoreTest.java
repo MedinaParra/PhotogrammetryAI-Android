@@ -16,11 +16,13 @@ public final class ImportedComponentGeometryCoreTest {
         evidence.add(new ImportedTrackAssemblerCore.PairEvidence(
                 "bridge-excluded", 4, 10, "LOW", "HIGH", "BRIDGE",
                 Arrays.asList(new ImportedTrackAssemblerCore.Correspondence(
-                        99, 99, 10, 10, 12, 12))));
+                        99, 99, coordinateX(4, 99), coordinateY(4, 99),
+                        coordinateX(10, 99), coordinateY(10, 99)))));
 
         ImportedTrackAssemblerCore.Result tracks =
                 ImportedTrackAssemblerCore.assemble(evidence, 3);
         check(tracks.tracks.size() == 8, "eight point tracks across two components");
+        check(tracks.coordinateConflicts == 0, "no coordinate conflicts");
         check(tracks.bridgePairsExcluded == 1, "bridge excluded");
         ImportedSeedGeometryCore.Result seed = new ImportedSeedGeometryCore.Result(
                 true, true, "SEED_GEOMETRY_READY", 1, 7,
@@ -47,13 +49,22 @@ public final class ImportedComponentGeometryCoreTest {
         List<ImportedTrackAssemblerCore.Correspondence> correspondences =
                 new ArrayList<ImportedTrackAssemblerCore.Correspondence>();
         for (int i = 0; i < 4; i++) {
+            int feature = featureBase + i;
             correspondences.add(new ImportedTrackAssemblerCore.Correspondence(
-                    featureBase + i, featureBase + i,
-                    100 + i * 7, 120 + i * 5,
-                    105 + i * 7, 121 + i * 5));
+                    feature, feature,
+                    coordinateX(left, feature), coordinateY(left, feature),
+                    coordinateX(right, feature), coordinateY(right, feature)));
         }
         return new ImportedTrackAssemblerCore.PairEvidence(id, left, right,
                 leftBand, rightBand, "STRONG", correspondences);
+    }
+
+    private static double coordinateX(int frame, int feature) {
+        return 80.0 + feature * 6.0 + frame * 2.0;
+    }
+
+    private static double coordinateY(int frame, int feature) {
+        return 110.0 + feature * 4.0 + frame * 1.5;
     }
 
     private static void check(boolean value, String label) {
