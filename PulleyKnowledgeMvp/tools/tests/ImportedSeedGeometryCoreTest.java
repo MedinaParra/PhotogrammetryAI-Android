@@ -35,6 +35,11 @@ public final class ImportedSeedGeometryCoreTest {
         }
         FundamentalMatrixCore.Result fundamental =
                 FundamentalMatrixCore.estimate(pairs, 1.8, 1200);
+        System.out.println("fundamental solved=" + fundamental.solved
+                + " status=" + fundamental.status
+                + " inliers=" + fundamental.inliers.size()
+                + " ratio=" + fundamental.inlierRatio
+                + " rms=" + fundamental.rmsPx);
         check(fundamental.solved, "fundamental solved");
         check(fundamental.inliers.size() >= 40, "fundamental inliers");
         ImportedSeedGeometryCore.Candidate candidate =
@@ -42,6 +47,16 @@ public final class ImportedSeedGeometryCoreTest {
                         "LOW", "LOW", "STRONG", pairs, fundamental);
         ImportedSeedGeometryCore.Result result = ImportedSeedGeometryCore.solve(
                 Collections.singletonList(candidate));
+        System.out.println("seed solved=" + result.solved
+                + " ready=" + result.geometryReady
+                + " state=" + result.state
+                + " focalRatio=" + result.focalLongEdgeRatio
+                + " focalPx=" + result.focalPx
+                + " pose=" + (result.pose == null ? "null" : result.pose.status)
+                + " positive=" + (result.pose == null ? 0.0 : result.pose.positiveRatio)
+                + " parallax=" + (result.pose == null ? 0.0 : result.pose.medianParallaxDegrees)
+                + " points=" + (result.cloud == null ? 0 : result.cloud.points.size())
+                + " rms=" + (result.cloud == null ? Double.POSITIVE_INFINITY : result.cloud.rmsPx));
         check(result.solved, "seed solved");
         check(result.geometryReady, "seed ready");
         check(result.pose != null && !"WEAK".equals(result.pose.status), "pose admitted");
