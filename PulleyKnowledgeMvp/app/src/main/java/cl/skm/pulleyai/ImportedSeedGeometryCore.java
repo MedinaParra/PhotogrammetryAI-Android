@@ -58,8 +58,9 @@ public final class ImportedSeedGeometryCore {
             return Result.blocked("NO_ADMISSIBLE_SEED", testedCandidates, testedFocals);
         }
         boolean ready = best.cloud.points.size() >= 12
-                && best.cloud.positiveRatio >= 0.55
-                && Double.isFinite(best.cloud.rmsPx) && best.cloud.rmsPx <= 4.0
+                && best.cloud.positiveDepthRatio >= 0.55
+                && Double.isFinite(best.cloud.rmsReprojectionPx)
+                && best.cloud.rmsReprojectionPx <= 4.0
                 && best.pose.medianParallaxDegrees >= 0.15;
         String state = ready ? "SEED_GEOMETRY_READY" : "SEED_GEOMETRY_REVIEW";
         return new Result(true, ready, state, testedCandidates, testedFocals,
@@ -120,7 +121,8 @@ public final class ImportedSeedGeometryCore {
             return status + cloud.points.size() * 24.0
                     + pose.positiveRatio * 500.0
                     + Math.min(4.0, pose.medianParallaxDegrees) * 80.0
-                    - (Double.isFinite(cloud.rmsPx) ? cloud.rmsPx * 120.0 : 10000.0)
+                    - (Double.isFinite(cloud.rmsReprojectionPx)
+                    ? cloud.rmsReprojectionPx * 120.0 : 10000.0)
                     - Math.abs(focalRatio - 0.9) * 8.0;
         }
     }
@@ -168,7 +170,8 @@ public final class ImportedSeedGeometryCore {
                     + " · pose " + pose.status
                     + " · parallax " + String.format(Locale.ROOT, "%.2f°", pose.medianParallaxDegrees)
                     + " · puntos " + cloud.points.size()
-                    + " · RMS " + String.format(Locale.ROOT, "%.2f px", cloud.rmsPx);
+                    + " · RMS " + String.format(Locale.ROOT, "%.2f px",
+                    cloud.rmsReprojectionPx);
         }
 
         public String canonicalJson() {
@@ -196,8 +199,11 @@ public final class ImportedSeedGeometryCore {
             }
             if (cloud != null) {
                 json.append(",\n\"triangulationStatus\":\"").append(cloud.status).append("\"")
+                        .append(",\n\"positiveDepthRatio\":")
+                        .append(cloud.positiveDepthRatio)
                         .append(",\n\"triangulatedPoints\":").append(cloud.points.size())
-                        .append(",\n\"reprojectionRmsPx\":").append(cloud.rmsPx)
+                        .append(",\n\"reprojectionRmsPx\":")
+                        .append(cloud.rmsReprojectionPx)
                         .append(",\n\"points\":[");
                 int limit = Math.min(200, cloud.points.size());
                 for (int i = 0; i < limit; i++) {
