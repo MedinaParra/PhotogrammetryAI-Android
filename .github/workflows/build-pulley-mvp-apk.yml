@@ -143,6 +143,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_imported_component_geometry_v71_test.sh
       - name: Test measured cross-component bridge evidence
         run: bash PulleyKnowledgeMvp/tools/run_imported_bridge_evidence_v72_test.sh
+      - name: Test honest software replay roadmap completion
+        run: bash PulleyKnowledgeMvp/tools/run_imported_replay_completion_v73_test.sh
       - name: Fetch verified pruned STEP-enabled cadcore v2 release
         run: |
           set -euo pipefail
@@ -158,15 +160,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build STEP-enabled alpha52 Lab2 APK
+      - name: Build STEP-enabled alpha53 Lab2 APK
         run: |
           set -o pipefail
           gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 | tee artifacts/gradle-build.log
-      - name: Upload alpha52 diagnostics
+      - name: Upload alpha53 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha52-build-diagnostic
+          name: SKM-Polea-AI-alpha53-build-diagnostic
           path: artifacts/
           if-no-files-found: warn
           retention-days: 14
@@ -174,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          CHECK="$RUNNER_TEMP/alpha52-apk"
+          CHECK="$RUNNER_TEMP/alpha53-apk"
           rm -rf "$CHECK" && mkdir -p "$CHECK"
           unzip -q "$APK" -d "$CHECK"
           test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
@@ -193,11 +195,11 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha52-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          manifest=json.loads(Path("${{ runner.temp }}/alpha53-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
           assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
           assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha52 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          print("alpha53 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
           PY
       - name: Verify stable alpha test signature
         run: |
@@ -207,12 +209,12 @@ jobs:
           grep -q "SKM Polea AI Alpha Lab" artifacts/SIGNING_CERTIFICATE.txt
       - name: Prepare artifact
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha52.apk
-          sha256sum artifacts/SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha52.apk | tee artifacts/SHA256SUMS.txt
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha53.apk
+          sha256sum artifacts/SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha53.apk | tee artifacts/SHA256SUMS.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha52
+          name: SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha53
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
