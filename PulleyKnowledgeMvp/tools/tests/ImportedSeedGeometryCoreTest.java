@@ -56,12 +56,15 @@ public final class ImportedSeedGeometryCoreTest {
                 + " positive=" + (result.pose == null ? 0.0 : result.pose.positiveRatio)
                 + " parallax=" + (result.pose == null ? 0.0 : result.pose.medianParallaxDegrees)
                 + " points=" + (result.cloud == null ? 0 : result.cloud.points.size())
-                + " rms=" + (result.cloud == null ? Double.POSITIVE_INFINITY : result.cloud.rmsPx));
+                + " depthRatio=" + (result.cloud == null ? 0.0
+                : result.cloud.positiveDepthRatio)
+                + " rms=" + (result.cloud == null ? Double.POSITIVE_INFINITY
+                : result.cloud.rmsReprojectionPx));
         check(result.solved, "seed solved");
         check(result.geometryReady, "seed ready");
         check(result.pose != null && !"WEAK".equals(result.pose.status), "pose admitted");
         check(result.cloud != null && result.cloud.points.size() >= 20, "cloud points");
-        check(result.cloud.rmsPx < 3.0, "cloud rms");
+        check(result.cloud.rmsReprojectionPx < 3.0, "cloud rms");
         check(result.canonicalJson().contains("skm-imported-seed-geometry/1"), "schema");
 
         ImportedSeedGeometryCore.Result blocked = ImportedSeedGeometryCore.solve(
