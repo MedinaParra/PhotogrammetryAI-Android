@@ -4,7 +4,7 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
     <application
         android:allowBackup="true"
-        android:label="SKM Polea AI Lab2 alpha51"
+        android:label="SKM Polea AI Lab2 alpha52"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".LauncherActivity"
