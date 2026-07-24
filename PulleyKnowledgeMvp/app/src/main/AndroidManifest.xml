@@ -4,7 +4,7 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
     <application
         android:allowBackup="true"
-        android:label="SKM Polea AI Lab2 alpha50"
+        android:label="SKM Polea AI Lab2 alpha51"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".LauncherActivity"
@@ -15,33 +15,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".CaptureActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-        <activity
-            android:name=".ZipReprocessActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-        <activity
-            android:name=".RuntimeReviewActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-        <activity
-            android:name=".DeviceCampaignActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-        <activity
-            android:name=".CadAssemblyActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-        <activity
-            android:name=".StepKernelActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
-        <activity
-            android:name=".MainActivity"
-            android:exported="false"
-            android:screenOrientation="landscape" />
+        <activity android:name=".CaptureActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".ZipReprocessActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".RuntimeReviewActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".DeviceCampaignActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".CadAssemblyActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".StepKernelActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".MainActivity" android:exported="false" android:screenOrientation="landscape" />
     </application>
 </manifest>
