@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai.lab2'
         minSdk 24
         targetSdk 35
-        versionCode 52
-        versionName '0.18.0-alpha52'
+        versionCode 53
+        versionName '0.18.0-alpha53'
     }
 
     signingConfigs {
@@ -42,11 +42,11 @@ android {
     }
 }
 
-// Alpha52 Lab2 ranks measured cross-component bridge evidence without auto-promoting weak pairs.
+// Alpha53 Lab2 closes the imported replay software roadmap while preserving the industrial boundary.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha52 Lab2')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha53 Lab2')
     }
     implementation files(cadcoreAar)
 }
