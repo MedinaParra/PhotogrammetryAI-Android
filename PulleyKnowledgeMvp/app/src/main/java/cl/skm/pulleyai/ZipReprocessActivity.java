@@ -17,7 +17,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
 
-/** UI for canonical ZIP import, local geometry, components and measured bridge evidence. */
+/** UI for complete imported replay software pipeline with explicit industrial boundary. */
 public final class ZipReprocessActivity extends Activity {
     private static final int OPEN_ZIP = 4510;
     private static final int SAVE_JSON = 4511;
@@ -34,6 +34,7 @@ public final class ZipReprocessActivity extends Activity {
     private ImportedSeedGeometryZipAnalyzer.Result seedResult;
     private ImportedComponentGeometryAnalyzer.Result componentResult;
     private ImportedBridgeEvidenceAnalyzer.Result bridgeResult;
+    private ImportedReplayCompletionAnalyzer.Result completionResult;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -49,12 +50,12 @@ public final class ZipReprocessActivity extends Activity {
         root.setBackgroundColor(Color.rgb(244, 247, 249));
         scroll.addView(root);
 
-        TextView title = text("REPROCESAR ZIP / PUENTE · ALPHA52 LAB2", 25, true);
+        TextView title = text("REPROCESAR ZIP / ROADMAP · ALPHA53 LAB2", 25, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
 
         TextView description = text(
-                "Versión 0.18.0-alpha52. Ejecuta preflight, matching multiescala, tracks, geometría semilla y componentes. Después compara inliers, ratio, RMS, cobertura y reciprocidad de los pares entre componentes para recomendar una captura puente. Ningún puente se promueve automáticamente a reconstrucción global.",
+                "Versión 0.18.0-alpha53. Ejecuta el flujo completo de software sobre el ZIP: preflight, matching, tracks, geometría semilla, componentes y evidencia de unión. El cierre puede llegar a 100 % del replay de software aunque la reconstrucción global, la escala métrica y la liberación industrial permanezcan bloqueadas por evidencia física pendiente.",
                 14, false);
         description.setPadding(0, dp(5), 0, dp(14));
         root.addView(description);
@@ -65,16 +66,16 @@ public final class ZipReprocessActivity extends Activity {
         status.setBackgroundColor(Color.WHITE);
         root.addView(status);
 
-        selectButton = button("SELECCIONAR Y REPROCESAR ZIP · ALPHA52");
+        selectButton = button("SELECCIONAR Y COMPLETAR ROADMAP · ALPHA53");
         selectButton.setOnClickListener(view -> openZipPicker());
         root.addView(selectButton);
 
-        saveJsonButton = button("GUARDAR PUENTE / COMPONENTES JSON");
+        saveJsonButton = button("GUARDAR DECISIÓN FINAL JSON");
         saveJsonButton.setEnabled(false);
         saveJsonButton.setOnClickListener(view -> saveResult(false));
         root.addView(saveJsonButton);
 
-        savePackageButton = button("GUARDAR PAQUETE TRAZABLE ZIP");
+        savePackageButton = button("GUARDAR PAQUETE FINAL TRAZABLE ZIP");
         savePackageButton.setEnabled(false);
         savePackageButton.setOnClickListener(view -> saveResult(true));
         root.addView(savePackageButton);
@@ -103,10 +104,11 @@ public final class ZipReprocessActivity extends Activity {
         seedResult = null;
         componentResult = null;
         bridgeResult = null;
+        completionResult = null;
         selectButton.setEnabled(false);
         saveJsonButton.setEnabled(false);
         savePackageButton.setEnabled(false);
-        status.setText("alpha52 · iniciando preflight del ZIP…");
+        status.setText("alpha53 · iniciando preflight del ZIP…");
         status.setTextColor(Color.rgb(35, 84, 117));
         new Thread(() -> {
             CaptureZipNormalizer.Result normalized = null;
@@ -114,6 +116,7 @@ public final class ZipReprocessActivity extends Activity {
             ImportedTrackZipAnalyzer.Result tracks = null;
             ImportedSeedGeometryZipAnalyzer.Result seed = null;
             ImportedComponentGeometryAnalyzer.Result components = null;
+            ImportedBridgeEvidenceAnalyzer.Result bridge = null;
             try {
                 normalized = CaptureZipNormalizer.normalize(
                         ZipReprocessActivity.this, sourceUri,
@@ -168,22 +171,34 @@ public final class ZipReprocessActivity extends Activity {
                         + "\n\n" + alpha50.summary + "\n\n" + alpha51.summary
                         + "\n\nClasificando evidencia entre componentes…"));
 
-                final ImportedBridgeEvidenceAnalyzer.Result alpha52 =
-                        ImportedBridgeEvidenceAnalyzer.process(
-                                ZipReprocessActivity.this, alpha47, alpha51);
+                bridge = ImportedBridgeEvidenceAnalyzer.process(
+                        ZipReprocessActivity.this, alpha47, alpha51);
+                bridgeResult = bridge;
+                final ImportedBridgeEvidenceAnalyzer.Result alpha52 = bridge;
+                runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
+                        + alpha47.summary + "\n\n" + alpha48.summary
+                        + "\n\n" + alpha50.summary + "\n\n" + alpha51.summary
+                        + "\n\n" + alpha52.summary
+                        + "\n\nConsolidando decisión final del roadmap…"));
+
+                final ImportedReplayCompletionAnalyzer.Result alpha53 =
+                        ImportedReplayCompletionAnalyzer.process(
+                                ZipReprocessActivity.this, preflight, alpha47,
+                                alpha48, alpha50, alpha51, alpha52);
                 runOnUiThread(() -> showCompleted(preflight, alpha47,
-                        alpha48, alpha50, alpha51, alpha52));
+                        alpha48, alpha50, alpha51, alpha52, alpha53));
             } catch (Exception error) {
                 final CaptureZipNormalizer.Result availablePreflight = normalized;
                 final MultiScaleZipReprocessor.Result availableMultiscale = multiscale;
                 final ImportedTrackZipAnalyzer.Result availableTracks = tracks;
                 final ImportedSeedGeometryZipAnalyzer.Result availableSeed = seed;
                 final ImportedComponentGeometryAnalyzer.Result availableComponents = components;
+                final ImportedBridgeEvidenceAnalyzer.Result availableBridge = bridge;
                 runOnUiThread(() -> showFailure(availablePreflight,
                         availableMultiscale, availableTracks, availableSeed,
-                        availableComponents, error));
+                        availableComponents, availableBridge, error));
             }
-        }, "Alpha52MeasuredBridgeReprocessor").start();
+        }, "Alpha53SoftwareRoadmapReprocessor").start();
     }
 
     private void showCompleted(CaptureZipNormalizer.Result preflight,
@@ -191,7 +206,8 @@ public final class ZipReprocessActivity extends Activity {
                                ImportedTrackZipAnalyzer.Result tracks,
                                ImportedSeedGeometryZipAnalyzer.Result seed,
                                ImportedComponentGeometryAnalyzer.Result components,
-                               ImportedBridgeEvidenceAnalyzer.Result bridge) {
+                               ImportedBridgeEvidenceAnalyzer.Result bridge,
+                               ImportedReplayCompletionAnalyzer.Result completion) {
         processing = false;
         normalizedResult = preflight;
         multiscaleResult = alpha47;
@@ -199,21 +215,16 @@ public final class ZipReprocessActivity extends Activity {
         seedResult = seed;
         componentResult = components;
         bridgeResult = bridge;
+        completionResult = completion;
         selectButton.setEnabled(true);
         saveJsonButton.setEnabled(true);
         savePackageButton.setEnabled(true);
         status.setText(preflight.summary + "\n\n" + alpha47.summary
                 + "\n\n" + tracks.summary + "\n\n" + seed.summary
-                + "\n\n" + components.summary + "\n\n" + bridge.summary);
-        if (components.topology.globalConnected
-                && components.topology.localGeometryReady) {
-            status.setTextColor(Color.rgb(25, 108, 65));
-        } else if (bridge.evidence.recommendation != null
-                || components.topology.localGeometryReady) {
-            status.setTextColor(Color.rgb(145, 82, 0));
-        } else {
-            status.setTextColor(Color.rgb(150, 30, 30));
-        }
+                + "\n\n" + components.summary + "\n\n" + bridge.summary
+                + "\n\n" + completion.summary);
+        status.setTextColor(completion.completion.softwareReplayComplete
+                ? Color.rgb(25, 108, 65) : Color.rgb(150, 30, 30));
     }
 
     private void showFailure(CaptureZipNormalizer.Result preflight,
@@ -221,6 +232,7 @@ public final class ZipReprocessActivity extends Activity {
                              ImportedTrackZipAnalyzer.Result tracks,
                              ImportedSeedGeometryZipAnalyzer.Result seed,
                              ImportedComponentGeometryAnalyzer.Result components,
+                             ImportedBridgeEvidenceAnalyzer.Result bridge,
                              Exception error) {
         processing = false;
         normalizedResult = preflight;
@@ -228,12 +240,13 @@ public final class ZipReprocessActivity extends Activity {
         trackResult = tracks;
         seedResult = seed;
         componentResult = components;
-        bridgeResult = null;
+        bridgeResult = bridge;
+        completionResult = null;
         selectButton.setEnabled(true);
         saveJsonButton.setEnabled(preflight != null || multiscale != null
-                || tracks != null || seed != null || components != null);
+                || tracks != null || seed != null || components != null || bridge != null);
         savePackageButton.setEnabled(multiscale != null || tracks != null
-                || seed != null || components != null);
+                || seed != null || components != null || bridge != null);
         String message = error.getMessage() == null
                 ? error.getClass().getSimpleName() : error.getMessage();
         StringBuilder available = new StringBuilder();
@@ -242,12 +255,11 @@ public final class ZipReprocessActivity extends Activity {
         if (tracks != null) append(available, tracks.summary);
         if (seed != null) append(available, seed.summary);
         if (components != null) append(available, components.summary);
-        append(available, "ETAPA SIGUIENTE BLOQUEADA\n" + message
+        if (bridge != null) append(available, bridge.summary);
+        append(available, "ROADMAP SOFTWARE INCOMPLETO\n" + message
                 + "\nPuede guardar la evidencia de la última etapa completada.");
         status.setText(available.toString());
-        status.setTextColor(components != null || seed != null
-                || tracks != null || multiscale != null
-                ? Color.rgb(145, 82, 0) : Color.rgb(150, 30, 30));
+        status.setTextColor(Color.rgb(150, 30, 30));
     }
 
     private static void append(StringBuilder text, String value) {
@@ -258,7 +270,9 @@ public final class ZipReprocessActivity extends Activity {
 
     private void saveResult(boolean packageZip) {
         File source;
-        if (bridgeResult != null) {
+        if (completionResult != null) {
+            source = packageZip ? completionResult.packageFile : completionResult.reportFile;
+        } else if (bridgeResult != null) {
             source = packageZip ? bridgeResult.packageFile : bridgeResult.reportFile;
         } else if (componentResult != null) {
             source = packageZip ? componentResult.packageFile : componentResult.reportFile;
@@ -300,7 +314,10 @@ public final class ZipReprocessActivity extends Activity {
             return;
         }
         File source = null;
-        if (bridgeResult != null) {
+        if (completionResult != null) {
+            source = requestCode == SAVE_PACKAGE ? completionResult.packageFile
+                    : requestCode == SAVE_JSON ? completionResult.reportFile : null;
+        } else if (bridgeResult != null) {
             source = requestCode == SAVE_PACKAGE ? bridgeResult.packageFile
                     : requestCode == SAVE_JSON ? bridgeResult.reportFile : null;
         } else if (componentResult != null) {
