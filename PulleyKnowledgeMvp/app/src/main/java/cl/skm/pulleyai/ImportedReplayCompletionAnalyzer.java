@@ -33,6 +33,8 @@ public final class ImportedReplayCompletionAnalyzer {
         input.seedStageComplete = seed != null && seed.geometry != null;
         input.componentStageComplete = components != null && components.topology != null;
         input.bridgeStageComplete = bridge != null && bridge.evidence != null;
+        input.bridgeRecommendationAvailable = bridge != null && bridge.evidence != null
+                && bridge.evidence.recommendation != null;
         input.globalConnected = components != null && components.topology.globalConnected;
         input.localGeometryReady = components != null
                 && components.topology.localGeometryReady;
@@ -47,8 +49,7 @@ public final class ImportedReplayCompletionAnalyzer {
                 ? 0 : tracks.tracks.tracks.size();
         input.triangulatedSeedPoints = seed == null || seed.geometry == null
                 || seed.geometry.cloud == null ? 0 : seed.geometry.cloud.points.size();
-        if (bridge != null && bridge.evidence != null
-                && bridge.evidence.recommendation != null) {
+        if (input.bridgeRecommendationAvailable) {
             input.bridgeLeftFrame = bridge.evidence.recommendation.candidate.leftFrame;
             input.bridgeRightFrame = bridge.evidence.recommendation.candidate.rightFrame;
         }
