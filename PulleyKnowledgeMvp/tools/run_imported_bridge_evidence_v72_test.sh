@@ -20,5 +20,5 @@ grep -q 'ImportedBridgeEvidenceAnalyzer.process' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
 grep -q 'ImportedBridgeEvidenceCore.analyze' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ImportedBridgeEvidenceAnalyzer.java"
-grep -q "versionName '0.18.0-alpha52'" "$ROOT/app/build.gradle"
+grep -q "applicationId 'cl.skm.pulleyai.lab2'" "$ROOT/app/build.gradle"
 echo 'imported bridge evidence v72 PASS'
