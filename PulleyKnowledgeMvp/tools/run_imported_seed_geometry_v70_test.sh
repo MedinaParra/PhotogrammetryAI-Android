@@ -19,7 +19,9 @@ if [ "$STATUS" -ne 0 ]; then
   exit "$STATUS"
 fi
 
-grep -q 'ImportedSeedGeometryCore' \
+grep -q 'ImportedSeedGeometryZipAnalyzer.process' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
+grep -q 'ImportedSeedGeometryCore.solve' \
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ImportedSeedGeometryZipAnalyzer.java"
 grep -q "versionName '0.18.0-alpha50'" "$ROOT/app/build.gradle"
 echo 'imported seed geometry v70 PASS'
