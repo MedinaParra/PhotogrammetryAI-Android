@@ -17,7 +17,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
 
-/** UI for canonical ZIP preflight, multiscale diagnostics and collision-safe tracks. */
+/** UI for canonical ZIP preflight, multiscale tracks and bounded seed geometry. */
 public final class ZipReprocessActivity extends Activity {
     private static final int OPEN_ZIP = 4510;
     private static final int SAVE_JSON = 4511;
@@ -31,6 +31,7 @@ public final class ZipReprocessActivity extends Activity {
     private CaptureZipNormalizer.Result normalizedResult;
     private MultiScaleZipReprocessor.Result multiscaleResult;
     private ImportedTrackZipAnalyzer.Result trackResult;
+    private ImportedSeedGeometryZipAnalyzer.Result seedResult;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -46,12 +47,12 @@ public final class ZipReprocessActivity extends Activity {
         root.setBackgroundColor(Color.rgb(244, 247, 249));
         scroll.addView(root);
 
-        TextView title = text("REPROCESAR ZIP / TRACKS · ALPHA49 LAB2", 25, true);
+        TextView title = text("REPROCESAR ZIP / GEOMETRÍA · ALPHA50 LAB2", 25, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
 
         TextView description = text(
-                "Versión 0.18.0-alpha49. Primero cuenta las fotos del manifiesto, resuelve rutas, valida SHA-256 y decodificación, y crea un ZIP canónico. Luego ejecuta matching multiescala y forma tracks solo desde pares STRONG/USABLE. Cada descarte queda identificado por número de fotografía.",
+                "Versión 0.18.0-alpha50. Normaliza el ZIP y registra la causa por fotografía; después ejecuta matching multiescala, tracks de tres o más vistas y una pose semilla con barrido focal acotado. La geometría semilla no equivale a reconstrucción global, escala métrica ni liberación industrial.",
                 14, false);
         description.setPadding(0, dp(5), 0, dp(14));
         root.addView(description);
@@ -62,11 +63,11 @@ public final class ZipReprocessActivity extends Activity {
         status.setBackgroundColor(Color.WHITE);
         root.addView(status);
 
-        selectButton = button("SELECCIONAR Y REPROCESAR ZIP · ALPHA49");
+        selectButton = button("SELECCIONAR Y REPROCESAR ZIP · ALPHA50");
         selectButton.setOnClickListener(view -> openZipPicker());
         root.addView(selectButton);
 
-        saveJsonButton = button("GUARDAR PREFLIGHT / TRACKS JSON");
+        saveJsonButton = button("GUARDAR GEOMETRÍA / TRACKS / PREFLIGHT JSON");
         saveJsonButton.setEnabled(false);
         saveJsonButton.setOnClickListener(view -> saveResult(false));
         root.addView(saveJsonButton);
@@ -97,14 +98,16 @@ public final class ZipReprocessActivity extends Activity {
         normalizedResult = null;
         multiscaleResult = null;
         trackResult = null;
+        seedResult = null;
         selectButton.setEnabled(false);
         saveJsonButton.setEnabled(false);
         savePackageButton.setEnabled(false);
-        status.setText("alpha49 · iniciando preflight del ZIP…");
+        status.setText("alpha50 · iniciando preflight del ZIP…");
         status.setTextColor(Color.rgb(35, 84, 117));
         new Thread(() -> {
             CaptureZipNormalizer.Result normalized = null;
             MultiScaleZipReprocessor.Result multiscale = null;
+            ImportedTrackZipAnalyzer.Result tracks = null;
             try {
                 normalized = CaptureZipNormalizer.normalize(
                         ZipReprocessActivity.this, sourceUri,
@@ -114,7 +117,7 @@ public final class ZipReprocessActivity extends Activity {
                 runOnUiThread(() -> {
                     saveJsonButton.setEnabled(true);
                     status.setText(preflight.summary
-                            + "\n\nPreflight aprobado. Iniciando alpha47 multiescala…");
+                            + "\n\nPreflight aprobado. Iniciando matching multiescala…");
                 });
 
                 Uri canonicalUri = Uri.fromFile(normalized.normalizedZip);
@@ -126,36 +129,53 @@ public final class ZipReprocessActivity extends Activity {
                 final MultiScaleZipReprocessor.Result alpha47 = multiscale;
                 runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
                         + alpha47.summary
-                        + "\n\nAlpha47 completo. Iniciando tracks alpha48/49…"));
+                        + "\n\nMatching completo. Iniciando tracks…"));
 
-                final ImportedTrackZipAnalyzer.Result tracks =
-                        ImportedTrackZipAnalyzer.process(
-                                ZipReprocessActivity.this, canonicalUri, alpha47,
+                tracks = ImportedTrackZipAnalyzer.process(
+                        ZipReprocessActivity.this, canonicalUri, alpha47,
+                        message -> runOnUiThread(() -> status.setText(
+                                preflight.summary + "\n\n" + message)));
+                trackResult = tracks;
+                final ImportedTrackZipAnalyzer.Result alpha48 = tracks;
+                runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
+                        + alpha47.summary + "\n\n" + alpha48.summary
+                        + "\n\nTracks completos. Buscando pose y nube semilla…"));
+
+                final ImportedSeedGeometryZipAnalyzer.Result seed =
+                        ImportedSeedGeometryZipAnalyzer.process(
+                                ZipReprocessActivity.this, canonicalUri, alpha48,
                                 message -> runOnUiThread(() -> status.setText(
                                         preflight.summary + "\n\n" + message)));
-                runOnUiThread(() -> showCompleted(preflight, alpha47, tracks));
+                runOnUiThread(() -> showCompleted(preflight, alpha47, alpha48, seed));
             } catch (Exception error) {
                 final CaptureZipNormalizer.Result availablePreflight = normalized;
                 final MultiScaleZipReprocessor.Result availableMultiscale = multiscale;
-                runOnUiThread(() -> showFailure(availablePreflight, availableMultiscale, error));
+                final ImportedTrackZipAnalyzer.Result availableTracks = tracks;
+                runOnUiThread(() -> showFailure(availablePreflight,
+                        availableMultiscale, availableTracks, error));
             }
-        }, "Alpha49CanonicalZipReprocessor").start();
+        }, "Alpha50ImportedGeometryReprocessor").start();
     }
 
     private void showCompleted(CaptureZipNormalizer.Result preflight,
                                MultiScaleZipReprocessor.Result alpha47,
-                               ImportedTrackZipAnalyzer.Result tracks) {
+                               ImportedTrackZipAnalyzer.Result tracks,
+                               ImportedSeedGeometryZipAnalyzer.Result seed) {
         processing = false;
         normalizedResult = preflight;
         multiscaleResult = alpha47;
         trackResult = tracks;
+        seedResult = seed;
         selectButton.setEnabled(true);
         saveJsonButton.setEnabled(true);
         savePackageButton.setEnabled(true);
-        status.setText(preflight.summary + "\n\n" + alpha47.summary + "\n\n" + tracks.summary);
-        if (alpha47.primaryGraphConnected && !tracks.tracks.tracks.isEmpty()) {
+        status.setText(preflight.summary + "\n\n" + alpha47.summary
+                + "\n\n" + tracks.summary + "\n\n" + seed.summary);
+        boolean globalConnected = alpha47.primaryGraphConnected;
+        if (globalConnected && seed.geometry.geometryReady) {
             status.setTextColor(Color.rgb(25, 108, 65));
-        } else if (alpha47.diagnosticGraphConnected || !tracks.tracks.tracks.isEmpty()) {
+        } else if (seed.geometry.solved || !tracks.tracks.tracks.isEmpty()
+                || alpha47.diagnosticGraphConnected) {
             status.setTextColor(Color.rgb(145, 82, 0));
         } else {
             status.setTextColor(Color.rgb(150, 30, 30));
@@ -164,32 +184,41 @@ public final class ZipReprocessActivity extends Activity {
 
     private void showFailure(CaptureZipNormalizer.Result preflight,
                              MultiScaleZipReprocessor.Result multiscale,
+                             ImportedTrackZipAnalyzer.Result tracks,
                              Exception error) {
         processing = false;
         normalizedResult = preflight;
         multiscaleResult = multiscale;
-        trackResult = null;
+        trackResult = tracks;
+        seedResult = null;
         selectButton.setEnabled(true);
-        saveJsonButton.setEnabled(preflight != null || multiscale != null);
-        savePackageButton.setEnabled(multiscale != null);
+        saveJsonButton.setEnabled(preflight != null || multiscale != null || tracks != null);
+        savePackageButton.setEnabled(multiscale != null || tracks != null);
         String message = error.getMessage() == null
                 ? error.getClass().getSimpleName() : error.getMessage();
-        String prefix = preflight == null ? "" : preflight.summary + "\n\n";
-        if (multiscale == null) {
-            status.setText(prefix + "REPROCESAMIENTO ALPHA49 BLOQUEADO\n" + message
-                    + "\nEl JSON de preflight conserva la causa por fotograma.");
-            status.setTextColor(Color.rgb(150, 30, 30));
-        } else {
-            status.setText(prefix + multiscale.summary
-                    + "\n\nTRACKS BLOQUEADOS\n" + message
-                    + "\nPuede guardar el diagnóstico multiescala disponible.");
-            status.setTextColor(Color.rgb(145, 82, 0));
+        StringBuilder available = new StringBuilder();
+        if (preflight != null) available.append(preflight.summary);
+        if (multiscale != null) {
+            if (available.length() > 0) available.append("\n\n");
+            available.append(multiscale.summary);
         }
+        if (tracks != null) {
+            if (available.length() > 0) available.append("\n\n");
+            available.append(tracks.summary);
+        }
+        if (available.length() > 0) available.append("\n\n");
+        available.append("ETAPA SIGUIENTE BLOQUEADA\n").append(message)
+                .append("\nPuede guardar la evidencia de la última etapa completada.");
+        status.setText(available.toString());
+        status.setTextColor(tracks != null || multiscale != null
+                ? Color.rgb(145, 82, 0) : Color.rgb(150, 30, 30));
     }
 
     private void saveResult(boolean packageZip) {
         File source;
-        if (trackResult != null) {
+        if (seedResult != null) {
+            source = packageZip ? seedResult.packageFile : seedResult.reportFile;
+        } else if (trackResult != null) {
             source = packageZip ? trackResult.packageFile : trackResult.trackFile;
         } else if (multiscaleResult != null) {
             source = packageZip ? multiscaleResult.packageFile : multiscaleResult.reportFile;
@@ -225,7 +254,10 @@ public final class ZipReprocessActivity extends Activity {
             return;
         }
         File source = null;
-        if (trackResult != null) {
+        if (seedResult != null) {
+            source = requestCode == SAVE_PACKAGE ? seedResult.packageFile
+                    : requestCode == SAVE_JSON ? seedResult.reportFile : null;
+        } else if (trackResult != null) {
             source = requestCode == SAVE_PACKAGE ? trackResult.packageFile
                     : requestCode == SAVE_JSON ? trackResult.trackFile : null;
         } else if (multiscaleResult != null) {
