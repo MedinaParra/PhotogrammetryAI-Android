@@ -9,6 +9,7 @@ public final class ImportedReplayCompletionCoreTest {
         demo.seedStageComplete = true;
         demo.componentStageComplete = true;
         demo.bridgeStageComplete = true;
+        demo.bridgeRecommendationAvailable = true;
         demo.globalConnected = false;
         demo.localGeometryReady = true;
         demo.metricScaleReady = false;
