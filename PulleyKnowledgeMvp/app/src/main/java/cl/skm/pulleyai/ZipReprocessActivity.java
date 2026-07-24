@@ -17,7 +17,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
 
-/** UI for canonical ZIP import, tracks, seed geometry and component topology. */
+/** UI for canonical ZIP import, local geometry, components and measured bridge evidence. */
 public final class ZipReprocessActivity extends Activity {
     private static final int OPEN_ZIP = 4510;
     private static final int SAVE_JSON = 4511;
@@ -33,6 +33,7 @@ public final class ZipReprocessActivity extends Activity {
     private ImportedTrackZipAnalyzer.Result trackResult;
     private ImportedSeedGeometryZipAnalyzer.Result seedResult;
     private ImportedComponentGeometryAnalyzer.Result componentResult;
+    private ImportedBridgeEvidenceAnalyzer.Result bridgeResult;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -48,12 +49,12 @@ public final class ZipReprocessActivity extends Activity {
         root.setBackgroundColor(Color.rgb(244, 247, 249));
         scroll.addView(root);
 
-        TextView title = text("REPROCESAR ZIP / COMPONENTES · ALPHA51 LAB2", 25, true);
+        TextView title = text("REPROCESAR ZIP / PUENTE · ALPHA52 LAB2", 25, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
 
         TextView description = text(
-                "Versión 0.18.0-alpha51. Ejecuta preflight, matching multiescala, tracks, geometría semilla y finalmente separa los componentes reales del grafo. Una nube local no se promueve a reconstrucción global mientras queden componentes o fotografías aisladas. El informe propone una unión fotográfica concreta.",
+                "Versión 0.18.0-alpha52. Ejecuta preflight, matching multiescala, tracks, geometría semilla y componentes. Después compara inliers, ratio, RMS, cobertura y reciprocidad de los pares entre componentes para recomendar una captura puente. Ningún puente se promueve automáticamente a reconstrucción global.",
                 14, false);
         description.setPadding(0, dp(5), 0, dp(14));
         root.addView(description);
@@ -64,11 +65,11 @@ public final class ZipReprocessActivity extends Activity {
         status.setBackgroundColor(Color.WHITE);
         root.addView(status);
 
-        selectButton = button("SELECCIONAR Y REPROCESAR ZIP · ALPHA51");
+        selectButton = button("SELECCIONAR Y REPROCESAR ZIP · ALPHA52");
         selectButton.setOnClickListener(view -> openZipPicker());
         root.addView(selectButton);
 
-        saveJsonButton = button("GUARDAR COMPONENTES / GEOMETRÍA JSON");
+        saveJsonButton = button("GUARDAR PUENTE / COMPONENTES JSON");
         saveJsonButton.setEnabled(false);
         saveJsonButton.setOnClickListener(view -> saveResult(false));
         root.addView(saveJsonButton);
@@ -101,16 +102,18 @@ public final class ZipReprocessActivity extends Activity {
         trackResult = null;
         seedResult = null;
         componentResult = null;
+        bridgeResult = null;
         selectButton.setEnabled(false);
         saveJsonButton.setEnabled(false);
         savePackageButton.setEnabled(false);
-        status.setText("alpha51 · iniciando preflight del ZIP…");
+        status.setText("alpha52 · iniciando preflight del ZIP…");
         status.setTextColor(Color.rgb(35, 84, 117));
         new Thread(() -> {
             CaptureZipNormalizer.Result normalized = null;
             MultiScaleZipReprocessor.Result multiscale = null;
             ImportedTrackZipAnalyzer.Result tracks = null;
             ImportedSeedGeometryZipAnalyzer.Result seed = null;
+            ImportedComponentGeometryAnalyzer.Result components = null;
             try {
                 normalized = CaptureZipNormalizer.normalize(
                         ZipReprocessActivity.this, sourceUri,
@@ -155,45 +158,58 @@ public final class ZipReprocessActivity extends Activity {
                         + "\n\n" + alpha50.summary
                         + "\n\nAnalizando componentes del grafo…"));
 
-                final ImportedComponentGeometryAnalyzer.Result components =
-                        ImportedComponentGeometryAnalyzer.process(
-                                ZipReprocessActivity.this, alpha48, alpha50,
-                                preflight.usableFrames);
+                components = ImportedComponentGeometryAnalyzer.process(
+                        ZipReprocessActivity.this, alpha48, alpha50,
+                        preflight.usableFrames);
+                componentResult = components;
+                final ImportedComponentGeometryAnalyzer.Result alpha51 = components;
+                runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
+                        + alpha47.summary + "\n\n" + alpha48.summary
+                        + "\n\n" + alpha50.summary + "\n\n" + alpha51.summary
+                        + "\n\nClasificando evidencia entre componentes…"));
+
+                final ImportedBridgeEvidenceAnalyzer.Result alpha52 =
+                        ImportedBridgeEvidenceAnalyzer.process(
+                                ZipReprocessActivity.this, alpha47, alpha51);
                 runOnUiThread(() -> showCompleted(preflight, alpha47,
-                        alpha48, alpha50, components));
+                        alpha48, alpha50, alpha51, alpha52));
             } catch (Exception error) {
                 final CaptureZipNormalizer.Result availablePreflight = normalized;
                 final MultiScaleZipReprocessor.Result availableMultiscale = multiscale;
                 final ImportedTrackZipAnalyzer.Result availableTracks = tracks;
                 final ImportedSeedGeometryZipAnalyzer.Result availableSeed = seed;
+                final ImportedComponentGeometryAnalyzer.Result availableComponents = components;
                 runOnUiThread(() -> showFailure(availablePreflight,
-                        availableMultiscale, availableTracks, availableSeed, error));
+                        availableMultiscale, availableTracks, availableSeed,
+                        availableComponents, error));
             }
-        }, "Alpha51ComponentAwareReprocessor").start();
+        }, "Alpha52MeasuredBridgeReprocessor").start();
     }
 
     private void showCompleted(CaptureZipNormalizer.Result preflight,
                                MultiScaleZipReprocessor.Result alpha47,
                                ImportedTrackZipAnalyzer.Result tracks,
                                ImportedSeedGeometryZipAnalyzer.Result seed,
-                               ImportedComponentGeometryAnalyzer.Result components) {
+                               ImportedComponentGeometryAnalyzer.Result components,
+                               ImportedBridgeEvidenceAnalyzer.Result bridge) {
         processing = false;
         normalizedResult = preflight;
         multiscaleResult = alpha47;
         trackResult = tracks;
         seedResult = seed;
         componentResult = components;
+        bridgeResult = bridge;
         selectButton.setEnabled(true);
         saveJsonButton.setEnabled(true);
         savePackageButton.setEnabled(true);
         status.setText(preflight.summary + "\n\n" + alpha47.summary
                 + "\n\n" + tracks.summary + "\n\n" + seed.summary
-                + "\n\n" + components.summary);
+                + "\n\n" + components.summary + "\n\n" + bridge.summary);
         if (components.topology.globalConnected
                 && components.topology.localGeometryReady) {
             status.setTextColor(Color.rgb(25, 108, 65));
-        } else if (components.topology.localGeometryReady
-                || !tracks.tracks.tracks.isEmpty()) {
+        } else if (bridge.evidence.recommendation != null
+                || components.topology.localGeometryReady) {
             status.setTextColor(Color.rgb(145, 82, 0));
         } else {
             status.setTextColor(Color.rgb(150, 30, 30));
@@ -204,17 +220,20 @@ public final class ZipReprocessActivity extends Activity {
                              MultiScaleZipReprocessor.Result multiscale,
                              ImportedTrackZipAnalyzer.Result tracks,
                              ImportedSeedGeometryZipAnalyzer.Result seed,
+                             ImportedComponentGeometryAnalyzer.Result components,
                              Exception error) {
         processing = false;
         normalizedResult = preflight;
         multiscaleResult = multiscale;
         trackResult = tracks;
         seedResult = seed;
-        componentResult = null;
+        componentResult = components;
+        bridgeResult = null;
         selectButton.setEnabled(true);
         saveJsonButton.setEnabled(preflight != null || multiscale != null
-                || tracks != null || seed != null);
-        savePackageButton.setEnabled(multiscale != null || tracks != null || seed != null);
+                || tracks != null || seed != null || components != null);
+        savePackageButton.setEnabled(multiscale != null || tracks != null
+                || seed != null || components != null);
         String message = error.getMessage() == null
                 ? error.getClass().getSimpleName() : error.getMessage();
         StringBuilder available = new StringBuilder();
@@ -222,10 +241,12 @@ public final class ZipReprocessActivity extends Activity {
         if (multiscale != null) append(available, multiscale.summary);
         if (tracks != null) append(available, tracks.summary);
         if (seed != null) append(available, seed.summary);
+        if (components != null) append(available, components.summary);
         append(available, "ETAPA SIGUIENTE BLOQUEADA\n" + message
                 + "\nPuede guardar la evidencia de la última etapa completada.");
         status.setText(available.toString());
-        status.setTextColor(seed != null || tracks != null || multiscale != null
+        status.setTextColor(components != null || seed != null
+                || tracks != null || multiscale != null
                 ? Color.rgb(145, 82, 0) : Color.rgb(150, 30, 30));
     }
 
@@ -237,7 +258,9 @@ public final class ZipReprocessActivity extends Activity {
 
     private void saveResult(boolean packageZip) {
         File source;
-        if (componentResult != null) {
+        if (bridgeResult != null) {
+            source = packageZip ? bridgeResult.packageFile : bridgeResult.reportFile;
+        } else if (componentResult != null) {
             source = packageZip ? componentResult.packageFile : componentResult.reportFile;
         } else if (seedResult != null) {
             source = packageZip ? seedResult.packageFile : seedResult.reportFile;
@@ -277,7 +300,10 @@ public final class ZipReprocessActivity extends Activity {
             return;
         }
         File source = null;
-        if (componentResult != null) {
+        if (bridgeResult != null) {
+            source = requestCode == SAVE_PACKAGE ? bridgeResult.packageFile
+                    : requestCode == SAVE_JSON ? bridgeResult.reportFile : null;
+        } else if (componentResult != null) {
             source = requestCode == SAVE_PACKAGE ? componentResult.packageFile
                     : requestCode == SAVE_JSON ? componentResult.reportFile : null;
         } else if (seedResult != null) {
