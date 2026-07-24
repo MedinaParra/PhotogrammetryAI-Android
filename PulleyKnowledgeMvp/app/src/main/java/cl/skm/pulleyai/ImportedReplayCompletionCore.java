@@ -61,6 +61,7 @@ public final class ImportedReplayCompletionCore {
         public boolean seedStageComplete;
         public boolean componentStageComplete;
         public boolean bridgeStageComplete;
+        public boolean bridgeRecommendationAvailable;
         public boolean globalConnected;
         public boolean localGeometryReady;
         public boolean metricScaleReady;
