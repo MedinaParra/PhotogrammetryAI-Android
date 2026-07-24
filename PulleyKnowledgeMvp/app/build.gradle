@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai.lab2'
         minSdk 24
         targetSdk 35
-        versionCode 49
-        versionName '0.18.0-alpha49'
+        versionCode 50
+        versionName '0.18.0-alpha50'
     }
 
     signingConfigs {
@@ -42,11 +42,11 @@ android {
     }
 }
 
-// Alpha49 Lab2 canonicalizes field ZIPs and exposes exact import failures before multiscale tracks.
+// Alpha50 Lab2 adds bounded seed pose and triangulation after canonical ZIP import and primary tracks.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha49 Lab2')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha50 Lab2')
     }
     implementation files(cadcoreAar)
 }
