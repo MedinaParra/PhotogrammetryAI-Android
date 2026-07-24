@@ -8,13 +8,13 @@ public final class ImportedBridgeEvidenceCoreTest {
     public static void main(String[] args) {
         ImportedComponentGeometryCore.Component first =
                 new ImportedComponentGeometryCore.Component("component-01",
-                        Arrays.asList(1, 3, 4, 7, 24, 32, 41), true, true);
+                        Arrays.asList(1, 3, 4, 7, 24, 32, 33, 41), true, true);
         ImportedComponentGeometryCore.Component second =
                 new ImportedComponentGeometryCore.Component("component-02",
                         Arrays.asList(10, 11, 13, 14, 16, 23), false, true);
         ImportedComponentGeometryCore.Result topology =
                 new ImportedComponentGeometryCore.Result(true,
-                        "LOCAL_COMPONENT_GEOMETRY_ONLY", 13, 13, 0,
+                        "LOCAL_COMPONENT_GEOMETRY_ONLY", 14, 14, 0,
                         Arrays.asList(first, second), 0,
                         false, true,
                         new ImportedComponentGeometryCore.BridgeRecommendation(
