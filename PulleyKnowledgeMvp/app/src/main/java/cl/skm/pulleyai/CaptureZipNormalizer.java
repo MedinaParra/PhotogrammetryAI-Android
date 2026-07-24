@@ -112,7 +112,7 @@ public final class CaptureZipNormalizer {
                     }
                     preflight.decodedFrames++;
                     sourceFrameNames.add(entryName);
-                    resolved.add(new ResolvedFrame(spec.sequence, entryName, jpeg));
+                    resolved.add(new ResolvedFrame(spec.sequence, entryName));
                 } catch (Throwable failure) {
                     String reason = failure.getMessage() == null
                             ? failure.getClass().getSimpleName() : failure.getMessage();
@@ -124,7 +124,7 @@ public final class CaptureZipNormalizer {
                 throw new IllegalStateException("ZIP PRECHECK BLOQUEADO · " + preflight.concise());
             }
 
-            notify(progress, "alpha49 · creando ZIP canónico…");
+            notify(progress, "alpha49 · creando ZIP canónico sin retener JPEGs en RAM…");
             try (ZipOutputStream output = new ZipOutputStream(
                     new BufferedOutputStream(new FileOutputStream(normalized)))) {
                 java.util.Enumeration<? extends ZipEntry> all = zip.entries();
@@ -133,7 +133,9 @@ public final class CaptureZipNormalizer {
                     ZipEntry entry = all.nextElement();
                     String name = entry.getName();
                     if (sourceFrameNames.contains(name)) continue;
-                    if (name.startsWith("frames/") && (name.endsWith(".jpg") || name.endsWith(".jpeg"))) {
+                    String lower = name.toLowerCase(Locale.ROOT);
+                    if (lower.startsWith("frames/")
+                            && (lower.endsWith(".jpg") || lower.endsWith(".jpeg"))) {
                         continue;
                     }
                     if (!written.add(name)) continue;
@@ -143,9 +145,10 @@ public final class CaptureZipNormalizer {
                     String canonical = String.format(Locale.ROOT,
                             "frames/frame_%04d.jpg", frame.sequence);
                     if (!written.add(canonical)) continue;
-                    output.putNextEntry(new ZipEntry(canonical));
-                    output.write(frame.jpeg);
-                    output.closeEntry();
+                    ZipEntry original = zip.getEntry(frame.sourceName);
+                    if (original == null) throw new IllegalStateException(
+                            "Entrada desapareció durante normalización: " + frame.sourceName);
+                    copyEntry(zip, original, output, canonical);
                 }
                 output.putNextEntry(new ZipEntry("alpha49_capture_zip_preflight.json"));
                 output.write(preflight.canonicalJson().getBytes(StandardCharsets.UTF_8));
@@ -262,12 +265,10 @@ public final class CaptureZipNormalizer {
     private static final class ResolvedFrame {
         final int sequence;
         final String sourceName;
-        final byte[] jpeg;
 
-        ResolvedFrame(int sequence, String sourceName, byte[] jpeg) {
+        ResolvedFrame(int sequence, String sourceName) {
             this.sequence = sequence;
             this.sourceName = sourceName;
-            this.jpeg = jpeg;
         }
     }
 
