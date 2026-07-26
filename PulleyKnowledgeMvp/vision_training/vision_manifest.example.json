@@ -1,0 +1,40 @@
+{
+  "schema": "skm-pulley-vision-models/1",
+  "packageId": "pulley-vision-a26-v1",
+  "segmentation": {
+    "file": "pulley_yolo11n_seg_int8.tflite",
+    "sha256": "REPLACE_WITH_64_HEX_SHA256",
+    "inputWidth": 512,
+    "inputHeight": 512,
+    "quantization": "INT8",
+    "classes": [
+      "pulley_shell",
+      "pulley_end_disc",
+      "pulley_shaft",
+      "bearing_housing",
+      "other_pulley",
+      "person",
+      "obstruction"
+    ]
+  },
+  "classification": {
+    "file": "capture_quality_mobilenetv3_small_int8.tflite",
+    "sha256": "REPLACE_WITH_64_HEX_SHA256",
+    "inputWidth": 224,
+    "inputHeight": 224,
+    "quantization": "INT8",
+    "classes": [
+      "good_capture",
+      "wrong_target",
+      "multiple_pulleys",
+      "partial_shell",
+      "person_obstruction",
+      "tool_obstruction",
+      "motion_blur",
+      "strong_reflection",
+      "too_dark",
+      "too_far",
+      "too_close"
+    ]
+  }
+}
