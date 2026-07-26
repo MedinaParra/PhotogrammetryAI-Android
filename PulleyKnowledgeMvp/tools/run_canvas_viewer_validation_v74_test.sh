@@ -8,9 +8,9 @@ WORKFLOW="$ROOT/../.github/workflows/build-pulley-mvp-apk.yml"
 
 test -f "$VIEWER"
 grep -q "applicationId 'cl.skm.pulleyai.lab2'" "$GRADLE"
-grep -q 'versionCode 59' "$GRADLE"
-grep -q "versionName '0.18.0-alpha59'" "$GRADLE"
-grep -q 'SKM Polea AI Lab2 alpha59' "$MANIFEST"
+grep -q 'versionCode 60' "$GRADLE"
+grep -q "versionName '0.18.0-alpha60'" "$GRADLE"
+grep -q 'SKM Polea AI Lab2 alpha60' "$MANIFEST"
 
 grep -q 'extends View' "$VIEWER"
 grep -q 'canvas.drawColor(Color.BLACK)' "$VIEWER"
@@ -42,12 +42,12 @@ grep -q 'ORIGEN AMARILLO' "$VIEWER"
 grep -q 'Double.isFinite(x)' "$VIEWER"
 
 if grep -Eq 'GLSurfaceView|android\.opengl|GLES20|EGLConfig|GL10|shader' "$VIEWER"; then
-  echo 'ERROR: alpha59 PointCloudViewerActivity must remain independent from GLSurfaceView/OpenGL/EGL/shaders' >&2
+  echo 'ERROR: alpha60 PointCloudViewerActivity must remain independent from GLSurfaceView/OpenGL/EGL/shaders' >&2
   exit 1
 fi
 
 grep -q 'Test Canvas viewer diagnostics and state restoration' "$WORKFLOW"
-grep -q 'SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha59-clean.zip' "$WORKFLOW"
+grep -q 'SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha60-clean.zip' "$WORKFLOW"
 
 python3 - "$VIEWER" <<'PY'
 from pathlib import Path
@@ -68,8 +68,8 @@ required = {
 }
 missing = [label for label, token in required.items() if token not in source]
 if missing:
-    raise SystemExit("Missing alpha59 Canvas diagnostics: " + ", ".join(missing))
+    raise SystemExit("Missing alpha60 Canvas diagnostics: " + ", ".join(missing))
 if source.count("postInvalidateOnAnimation") < 5:
     raise SystemExit("Expected foreground, size and gesture redraw hooks")
-print("alpha59 raw Canvas viewer diagnostics/state contract PASS")
+print("alpha60 raw Canvas viewer diagnostics/state contract PASS")
 PY
