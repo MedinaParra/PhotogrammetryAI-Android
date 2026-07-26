@@ -17,8 +17,8 @@ VIEWER="$ROOT/app/src/main/java/cl/skm/pulleyai/PulleyCylinderViewerActivity.jav
 UI="$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
 MANIFEST="$ROOT/app/src/main/AndroidManifest.xml"
 
-grep -q "versionCode 59" "$ROOT/app/build.gradle"
-grep -q "versionName '0.18.0-alpha59'" "$ROOT/app/build.gradle"
+grep -q "versionCode 60" "$ROOT/app/build.gradle"
+grep -q "versionName '0.18.0-alpha60'" "$ROOT/app/build.gradle"
 grep -q 'FIT_ACCEPTED' "$CORE"
 grep -q 'FIT_WEAK' "$CORE"
 grep -q 'PRIOR_ONLY' "$CORE"
@@ -37,8 +37,8 @@ grep -q 'RESULTADO EXPERIMENTAL' "$VIEWER"
 grep -q 'onSaveInstanceState' "$VIEWER"
 grep -q 'ACTION_POINTER_UP' "$VIEWER"
 if grep -Eq 'GLSurfaceView|android\.opengl|GLES20|EGLConfig|GL10' "$VIEWER"; then
-  echo 'ERROR: alpha59 cylinder viewer must remain Canvas-only' >&2
+  echo 'ERROR: alpha60 cylinder viewer must remain Canvas-only' >&2
   exit 1
 fi
 
-echo 'prior-constrained cylinder alignment v75 + alpha59 viewer PASS'
+echo 'prior-constrained cylinder alignment v75 + alpha60 viewer PASS'
