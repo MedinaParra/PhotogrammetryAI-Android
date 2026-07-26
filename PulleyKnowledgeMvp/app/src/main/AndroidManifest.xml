@@ -9,10 +9,10 @@
     <uses-feature android:glEsVersion="0x00020000" android:required="false" />
     <application
         android:allowBackup="true"
-        android:label="SKM Polea AI Lab2 alpha59"
+        android:label="SKM Polea AI Lab2 alpha60"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
-            android:name=".LauncherActivity"
+            android:name=".VisionEntryActivity"
             android:exported="true"
             android:screenOrientation="landscape">
             <intent-filter>
@@ -20,6 +20,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".LauncherActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".VisionModelManagerActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity android:name=".CaptureActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity
             android:name=".ZipReprocessActivity"
