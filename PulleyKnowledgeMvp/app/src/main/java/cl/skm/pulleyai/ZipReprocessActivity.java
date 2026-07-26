@@ -1,10 +1,17 @@
 package cl.skm.pulleyai;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -17,29 +24,66 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
 
-/** Imported replay pipeline with an explicit point-cloud result viewer. */
-public final class ZipReprocessActivity extends Activity {
+/** UI client for the persistent alpha55 foreground ZIP reprocessor. */
+public final class ZipReprocessActivity extends Activity
+        implements ZipReprocessForegroundService.Listener {
     private static final int OPEN_ZIP = 4510;
     private static final int SAVE_JSON = 4511;
     private static final int SAVE_PACKAGE = 4512;
+    private static final int NOTIFICATION_PERMISSION = 4513;
 
     private TextView status;
     private Button selectButton;
+    private Button retryButton;
     private Button viewCloudButton;
     private Button saveJsonButton;
     private Button savePackageButton;
-    private volatile boolean processing;
-    private CaptureZipNormalizer.Result normalizedResult;
-    private MultiScaleZipReprocessor.Result multiscaleResult;
-    private ImportedTrackZipAnalyzer.Result trackResult;
-    private ImportedSeedGeometryZipAnalyzer.Result seedResult;
-    private ImportedComponentGeometryAnalyzer.Result componentResult;
-    private ImportedBridgeEvidenceAnalyzer.Result bridgeResult;
-    private ImportedReplayCompletionAnalyzer.Result completionResult;
+
+    private ZipReprocessForegroundService service;
+    private boolean bound;
+    private ZipReprocessForegroundService.Snapshot current;
+
+    private final ServiceConnection connection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder binder) {
+            service = ((ZipReprocessForegroundService.LocalBinder) binder).service();
+            bound = true;
+            service.registerListener(ZipReprocessActivity.this);
+            current = service.snapshot();
+            render(current);
+            service.resumePersistedIfNeeded();
+        }
+
+        @Override public void onServiceDisconnected(ComponentName name) {
+            bound = false;
+            service = null;
+        }
+    };
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         buildUi();
+        requestNotificationPermission();
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        Intent intent = new Intent(this, ZipReprocessForegroundService.class);
+        bindService(intent, connection, Context.BIND_AUTO_CREATE);
+    }
+
+    @Override protected void onStop() {
+        if (bound && service != null) {
+            service.unregisterListener(this);
+            unbindService(connection);
+        }
+        bound = false;
+        service = null;
+        super.onStop();
+    }
+
+    @Override public void onSnapshot(ZipReprocessForegroundService.Snapshot snapshot) {
+        current = snapshot;
+        render(snapshot);
     }
 
     private void buildUi() {
@@ -51,30 +95,34 @@ public final class ZipReprocessActivity extends Activity {
         root.setBackgroundColor(Color.rgb(244, 247, 249));
         scroll.addView(root);
 
-        TextView title = text("REPROCESAR ZIP / RESULTADOS · ALPHA54 LAB2", 25, true);
+        TextView title = text("REPROCESAR ZIP / RESULTADOS · ALPHA55 LAB2", 25, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
 
         TextView description = text(
-                "Versión 0.18.0-alpha54. Ejecuta preflight, matching, tracks, geometría semilla, "
-                        + "componentes y evidencia de unión. Cuando existen coordenadas trianguladas habilita "
-                        + "un visor 3D táctil y exportación PLY/XYZ. La nube semilla continúa sin escala métrica "
-                        + "y no representa una liberación industrial.",
+                "Versión 0.18.0-alpha55. El análisis se ejecuta como servicio persistente: "
+                        + "puede girar el equipo, cambiar de aplicación o apagar la pantalla sin perder "
+                        + "el ZIP ni reiniciar el roadmap. Una notificación muestra el progreso. "
+                        + "La nube semilla continúa sin escala métrica y no representa liberación industrial.",
                 14, false);
         description.setPadding(0, dp(5), 0, dp(14));
         root.addView(description);
 
-        status = text("Seleccione demo_3_00b90b75.zip u otro paquete skm-polea-capture/*.",
-                14, false);
+        status = text("Conectando con el servicio de análisis…", 14, false);
         status.setPadding(dp(14), dp(13), dp(14), dp(13));
         status.setBackgroundColor(Color.WHITE);
         root.addView(status);
 
-        selectButton = button("SELECCIONAR Y ANALIZAR ZIP · ALPHA54");
+        selectButton = button("SELECCIONAR Y ANALIZAR ZIP · ALPHA55");
         selectButton.setOnClickListener(view -> openZipPicker());
         root.addView(selectButton);
 
-        viewCloudButton = button("VER RESULTADOS 3D / NUBE DE PUNTOS");
+        retryButton = button("REPROCESAR ÚLTIMO ZIP SIN SELECCIONARLO");
+        retryButton.setEnabled(false);
+        retryButton.setOnClickListener(view -> retryLastZip());
+        root.addView(retryButton);
+
+        viewCloudButton = button("VER RESULTADOS 3D / NUBE NO DISPONIBLE");
         viewCloudButton.setEnabled(false);
         viewCloudButton.setOnClickListener(view -> openPointCloud());
         root.addView(viewCloudButton);
@@ -95,258 +143,98 @@ public final class ZipReprocessActivity extends Activity {
         setContentView(scroll);
     }
 
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    NOTIFICATION_PERMISSION);
+        }
+    }
+
     private void openZipPicker() {
-        if (processing) return;
+        if (current != null && current.running) return;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/zip");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         intent.putExtra(Intent.EXTRA_MIME_TYPES,
                 new String[]{"application/zip", "application/octet-stream"});
         startActivityForResult(intent, OPEN_ZIP);
     }
 
+    private void startProcessing(Uri sourceUri) {
+        if (sourceUri == null) return;
+        Intent intent = new Intent(this, ZipReprocessForegroundService.class)
+                .setAction(ZipReprocessForegroundService.ACTION_START)
+                .putExtra(ZipReprocessForegroundService.EXTRA_SOURCE_URI, sourceUri.toString());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
+        else startService(intent);
+        status.setText("alpha55 · análisis iniciado en segundo plano. Puede apagar la pantalla.");
+        status.setTextColor(Color.rgb(35, 84, 117));
+        selectButton.setEnabled(false);
+        retryButton.setEnabled(false);
+    }
+
+    private void retryLastZip() {
+        if (current == null || current.running || current.sourceUri.isEmpty()) return;
+        startProcessing(Uri.parse(current.sourceUri));
+    }
+
     private void openPointCloud() {
-        if (!hasSeedCloud()) {
+        if (current == null || !current.hasSeedCloud()) {
             Toast.makeText(this,
-                    seedResult == null
-                            ? "Primero complete el análisis del ZIP"
-                            : "La etapa semilla no produjo coordenadas 3D visibles",
+                    "La etapa semilla no produjo coordenadas 3D visibles.",
                     Toast.LENGTH_LONG).show();
             return;
         }
         Intent intent = new Intent(this, PointCloudViewerActivity.class);
         intent.putExtra(PointCloudViewerActivity.EXTRA_REPORT_PATH,
-                seedResult.reportFile.getAbsolutePath());
-        intent.putExtra(PointCloudViewerActivity.EXTRA_SUMMARY, seedResult.summary);
+                current.seedReportPath);
+        intent.putExtra(PointCloudViewerActivity.EXTRA_SUMMARY,
+                current.seedSummary);
         startActivity(intent);
     }
 
-    private void startProcessing(Uri sourceUri) {
-        processing = true;
-        normalizedResult = null;
-        multiscaleResult = null;
-        trackResult = null;
-        seedResult = null;
-        componentResult = null;
-        bridgeResult = null;
-        completionResult = null;
-        selectButton.setEnabled(false);
-        viewCloudButton.setEnabled(false);
-        saveJsonButton.setEnabled(false);
-        savePackageButton.setEnabled(false);
-        status.setText("alpha54 · iniciando preflight del ZIP…");
-        status.setTextColor(Color.rgb(35, 84, 117));
-        new Thread(() -> {
-            CaptureZipNormalizer.Result normalized = null;
-            MultiScaleZipReprocessor.Result multiscale = null;
-            ImportedTrackZipAnalyzer.Result tracks = null;
-            ImportedSeedGeometryZipAnalyzer.Result seed = null;
-            ImportedComponentGeometryAnalyzer.Result components = null;
-            ImportedBridgeEvidenceAnalyzer.Result bridge = null;
-            try {
-                normalized = CaptureZipNormalizer.normalize(
-                        ZipReprocessActivity.this, sourceUri,
-                        message -> runOnUiThread(() -> status.setText(message)));
-                normalizedResult = normalized;
-                final CaptureZipNormalizer.Result preflight = normalized;
-                runOnUiThread(() -> {
-                    saveJsonButton.setEnabled(true);
-                    status.setText(preflight.summary
-                            + "\n\nPreflight aprobado. Iniciando matching multiescala…");
-                });
+    private void render(ZipReprocessForegroundService.Snapshot snapshot) {
+        if (snapshot == null || status == null) return;
+        boolean running = snapshot.running;
+        selectButton.setEnabled(!running);
+        retryButton.setEnabled(!running && !snapshot.sourceUri.isEmpty());
+        viewCloudButton.setEnabled(snapshot.hasSeedCloud());
+        saveJsonButton.setEnabled(snapshot.hasReport());
+        savePackageButton.setEnabled(snapshot.hasPackage());
 
-                Uri canonicalUri = Uri.fromFile(normalized.normalizedZip);
-                multiscale = MultiScaleZipReprocessor.process(
-                        ZipReprocessActivity.this, canonicalUri,
-                        message -> runOnUiThread(() -> status.setText(
-                                preflight.summary + "\n\n" + message)));
-                multiscaleResult = multiscale;
-                final MultiScaleZipReprocessor.Result alpha47 = multiscale;
-                runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
-                        + alpha47.summary
-                        + "\n\nMatching completo. Iniciando tracks…"));
-
-                tracks = ImportedTrackZipAnalyzer.process(
-                        ZipReprocessActivity.this, canonicalUri, alpha47,
-                        message -> runOnUiThread(() -> status.setText(
-                                preflight.summary + "\n\n" + message)));
-                trackResult = tracks;
-                final ImportedTrackZipAnalyzer.Result alpha48 = tracks;
-                runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
-                        + alpha47.summary + "\n\n" + alpha48.summary
-                        + "\n\nTracks completos. Buscando pose y nube semilla…"));
-
-                seed = ImportedSeedGeometryZipAnalyzer.process(
-                        ZipReprocessActivity.this, canonicalUri, alpha48,
-                        message -> runOnUiThread(() -> status.setText(
-                                preflight.summary + "\n\n" + message)));
-                seedResult = seed;
-                final ImportedSeedGeometryZipAnalyzer.Result alpha50 = seed;
-                runOnUiThread(() -> {
-                    refreshCloudButton();
-                    status.setText(preflight.summary + "\n\n"
-                            + alpha47.summary + "\n\n" + alpha48.summary
-                            + "\n\n" + alpha50.summary
-                            + (hasSeedCloud()
-                            ? "\n\nNube semilla disponible: puede abrir RESULTADOS 3D mientras continúa el roadmap."
-                            : "\n\nLa etapa semilla no produjo puntos visibles.")
-                            + "\n\nAnalizando componentes del grafo…");
-                });
-
-                components = ImportedComponentGeometryAnalyzer.process(
-                        ZipReprocessActivity.this, alpha48, alpha50,
-                        preflight.usableFrames);
-                componentResult = components;
-                final ImportedComponentGeometryAnalyzer.Result alpha51 = components;
-                runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
-                        + alpha47.summary + "\n\n" + alpha48.summary
-                        + "\n\n" + alpha50.summary + "\n\n" + alpha51.summary
-                        + "\n\nClasificando evidencia entre componentes…"));
-
-                bridge = ImportedBridgeEvidenceAnalyzer.process(
-                        ZipReprocessActivity.this, alpha47, alpha51);
-                bridgeResult = bridge;
-                final ImportedBridgeEvidenceAnalyzer.Result alpha52 = bridge;
-                runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
-                        + alpha47.summary + "\n\n" + alpha48.summary
-                        + "\n\n" + alpha50.summary + "\n\n" + alpha51.summary
-                        + "\n\n" + alpha52.summary
-                        + "\n\nConsolidando decisión final del roadmap…"));
-
-                final ImportedReplayCompletionAnalyzer.Result alpha53 =
-                        ImportedReplayCompletionAnalyzer.process(
-                                ZipReprocessActivity.this, preflight, alpha47,
-                                alpha48, alpha50, alpha51, alpha52);
-                runOnUiThread(() -> showCompleted(preflight, alpha47,
-                        alpha48, alpha50, alpha51, alpha52, alpha53));
-            } catch (Exception error) {
-                final CaptureZipNormalizer.Result availablePreflight = normalized;
-                final MultiScaleZipReprocessor.Result availableMultiscale = multiscale;
-                final ImportedTrackZipAnalyzer.Result availableTracks = tracks;
-                final ImportedSeedGeometryZipAnalyzer.Result availableSeed = seed;
-                final ImportedComponentGeometryAnalyzer.Result availableComponents = components;
-                final ImportedBridgeEvidenceAnalyzer.Result availableBridge = bridge;
-                runOnUiThread(() -> showFailure(availablePreflight,
-                        availableMultiscale, availableTracks, availableSeed,
-                        availableComponents, availableBridge, error));
-            }
-        }, "Alpha54SoftwareRoadmapReprocessor").start();
-    }
-
-    private void showCompleted(CaptureZipNormalizer.Result preflight,
-                               MultiScaleZipReprocessor.Result alpha47,
-                               ImportedTrackZipAnalyzer.Result tracks,
-                               ImportedSeedGeometryZipAnalyzer.Result seed,
-                               ImportedComponentGeometryAnalyzer.Result components,
-                               ImportedBridgeEvidenceAnalyzer.Result bridge,
-                               ImportedReplayCompletionAnalyzer.Result completion) {
-        processing = false;
-        normalizedResult = preflight;
-        multiscaleResult = alpha47;
-        trackResult = tracks;
-        seedResult = seed;
-        componentResult = components;
-        bridgeResult = bridge;
-        completionResult = completion;
-        selectButton.setEnabled(true);
-        refreshCloudButton();
-        saveJsonButton.setEnabled(true);
-        savePackageButton.setEnabled(true);
-        status.setText(preflight.summary + "\n\n" + alpha47.summary
-                + "\n\n" + tracks.summary + "\n\n" + seed.summary
-                + "\n\n" + components.summary + "\n\n" + bridge.summary
-                + "\n\n" + completion.summary
-                + cloudAvailabilityText());
-        status.setTextColor(completion.completion.softwareReplayComplete
-                ? Color.rgb(25, 108, 65) : Color.rgb(150, 30, 30));
-    }
-
-    private void showFailure(CaptureZipNormalizer.Result preflight,
-                             MultiScaleZipReprocessor.Result multiscale,
-                             ImportedTrackZipAnalyzer.Result tracks,
-                             ImportedSeedGeometryZipAnalyzer.Result seed,
-                             ImportedComponentGeometryAnalyzer.Result components,
-                             ImportedBridgeEvidenceAnalyzer.Result bridge,
-                             Exception error) {
-        processing = false;
-        normalizedResult = preflight;
-        multiscaleResult = multiscale;
-        trackResult = tracks;
-        seedResult = seed;
-        componentResult = components;
-        bridgeResult = bridge;
-        completionResult = null;
-        selectButton.setEnabled(true);
-        refreshCloudButton();
-        saveJsonButton.setEnabled(preflight != null || multiscale != null
-                || tracks != null || seed != null || components != null || bridge != null);
-        savePackageButton.setEnabled(multiscale != null || tracks != null
-                || seed != null || components != null || bridge != null);
-        String message = error.getMessage() == null
-                ? error.getClass().getSimpleName() : error.getMessage();
-        StringBuilder available = new StringBuilder();
-        if (preflight != null) available.append(preflight.summary);
-        if (multiscale != null) append(available, multiscale.summary);
-        if (tracks != null) append(available, tracks.summary);
-        if (seed != null) append(available, seed.summary);
-        if (components != null) append(available, components.summary);
-        if (bridge != null) append(available, bridge.summary);
-        append(available, "ROADMAP SOFTWARE INCOMPLETO\n" + message
-                + "\nPuede guardar la evidencia de la última etapa completada."
-                + cloudAvailabilityText());
-        status.setText(available.toString());
-        status.setTextColor(Color.rgb(150, 30, 30));
-    }
-
-    private boolean hasSeedCloud() {
-        return seedResult != null
-                && seedResult.reportFile != null
-                && seedResult.reportFile.isFile()
-                && seedResult.geometry != null
-                && seedResult.geometry.cloud != null
-                && seedResult.geometry.cloud.points != null
-                && !seedResult.geometry.cloud.points.isEmpty();
-    }
-
-    private void refreshCloudButton() {
-        viewCloudButton.setEnabled(hasSeedCloud());
-        viewCloudButton.setText(hasSeedCloud()
-                ? "VER RESULTADOS 3D · " + seedResult.geometry.cloud.points.size() + " PUNTOS"
+        selectButton.setText(running
+                ? "ANÁLISIS ACTIVO EN SEGUNDO PLANO"
+                : "SELECCIONAR Y ANALIZAR OTRO ZIP · ALPHA55");
+        retryButton.setText(snapshot.sourceUri.isEmpty()
+                ? "REPROCESAR ÚLTIMO ZIP · NO DISPONIBLE"
+                : "REPROCESAR ÚLTIMO ZIP SIN SELECCIONARLO");
+        viewCloudButton.setText(snapshot.hasSeedCloud()
+                ? "VER RESULTADOS 3D · " + snapshot.seedPointCount + " PUNTOS"
                 : "VER RESULTADOS 3D / NUBE NO DISPONIBLE");
-    }
 
-    private String cloudAvailabilityText() {
-        if (seedResult == null) return "\n\nNUBE 3D NO GENERADA: la etapa semilla no fue alcanzada.";
-        if (!hasSeedCloud()) return "\n\nNUBE 3D NO DISPONIBLE: no existen coordenadas trianguladas válidas.";
-        return "\n\nNUBE 3D DISPONIBLE: " + seedResult.geometry.cloud.points.size()
-                + " puntos semilla, sin escala métrica.";
-    }
-
-    private static void append(StringBuilder text, String value) {
-        if (value == null || value.isEmpty()) return;
-        if (text.length() > 0) text.append("\n\n");
-        text.append(value);
+        String lifecycle = running
+                ? "\n\nPROCESAMIENTO PERSISTENTE ACTIVO\n"
+                + "Puede girar el teléfono, bloquear la pantalla o usar otra aplicación."
+                : snapshot.completed
+                ? "\n\nANÁLISIS FINALIZADO Y ESTADO RECUPERABLE."
+                : snapshot.failed
+                ? "\n\nEL ZIP SE CONSERVA: puede reintentar sin seleccionarlo nuevamente."
+                : "";
+        status.setText(snapshot.message + lifecycle);
+        status.setTextColor(running ? Color.rgb(35, 84, 117)
+                : snapshot.failed ? Color.rgb(150, 30, 30)
+                : snapshot.completed ? Color.rgb(25, 108, 65)
+                : Color.rgb(35, 39, 42));
     }
 
     private void saveResult(boolean packageZip) {
-        File source;
-        if (completionResult != null) {
-            source = packageZip ? completionResult.packageFile : completionResult.reportFile;
-        } else if (bridgeResult != null) {
-            source = packageZip ? bridgeResult.packageFile : bridgeResult.reportFile;
-        } else if (componentResult != null) {
-            source = packageZip ? componentResult.packageFile : componentResult.reportFile;
-        } else if (seedResult != null) {
-            source = packageZip ? seedResult.packageFile : seedResult.reportFile;
-        } else if (trackResult != null) {
-            source = packageZip ? trackResult.packageFile : trackResult.trackFile;
-        } else if (multiscaleResult != null) {
-            source = packageZip ? multiscaleResult.packageFile : multiscaleResult.reportFile;
-        } else if (!packageZip && normalizedResult != null) {
-            source = normalizedResult.preflightFile;
-        } else {
-            return;
-        }
+        if (current == null) return;
+        String path = packageZip ? current.packagePath : current.reportPath;
+        File source = path == null || path.isEmpty() ? null : new File(path);
         if (source == null || !source.isFile()) {
             Toast.makeText(this, "El archivo de evidencia no existe.", Toast.LENGTH_LONG).show();
             return;
@@ -363,39 +251,22 @@ public final class ZipReprocessActivity extends Activity {
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         if (requestCode == OPEN_ZIP) {
+            int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             try {
                 getContentResolver().takePersistableUriPermission(uri,
-                        data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION));
+                        flags | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             } catch (SecurityException ignored) {
-                // The current read grant is sufficient for immediate processing.
+                // Immediate read access still permits this run; many providers omit persistable flags.
             }
             startProcessing(uri);
             return;
         }
-        File source = null;
-        if (completionResult != null) {
-            source = requestCode == SAVE_PACKAGE ? completionResult.packageFile
-                    : requestCode == SAVE_JSON ? completionResult.reportFile : null;
-        } else if (bridgeResult != null) {
-            source = requestCode == SAVE_PACKAGE ? bridgeResult.packageFile
-                    : requestCode == SAVE_JSON ? bridgeResult.reportFile : null;
-        } else if (componentResult != null) {
-            source = requestCode == SAVE_PACKAGE ? componentResult.packageFile
-                    : requestCode == SAVE_JSON ? componentResult.reportFile : null;
-        } else if (seedResult != null) {
-            source = requestCode == SAVE_PACKAGE ? seedResult.packageFile
-                    : requestCode == SAVE_JSON ? seedResult.reportFile : null;
-        } else if (trackResult != null) {
-            source = requestCode == SAVE_PACKAGE ? trackResult.packageFile
-                    : requestCode == SAVE_JSON ? trackResult.trackFile : null;
-        } else if (multiscaleResult != null) {
-            source = requestCode == SAVE_PACKAGE ? multiscaleResult.packageFile
-                    : requestCode == SAVE_JSON ? multiscaleResult.reportFile : null;
-        } else if (normalizedResult != null && requestCode == SAVE_JSON) {
-            source = normalizedResult.preflightFile;
-        }
-        if (source == null) return;
+        if (current == null) return;
+        String path = requestCode == SAVE_PACKAGE
+                ? current.packagePath : requestCode == SAVE_JSON ? current.reportPath : "";
+        File source = path == null || path.isEmpty() ? null : new File(path);
+        if (source == null || !source.isFile()) return;
         try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(source));
              OutputStream output = getContentResolver().openOutputStream(uri, "w")) {
             if (output == null) throw new IllegalStateException("No se pudo abrir el destino");
