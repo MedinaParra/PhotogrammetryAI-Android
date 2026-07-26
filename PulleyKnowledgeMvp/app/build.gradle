@@ -12,6 +12,9 @@ android {
         targetSdk 35
         versionCode 60
         versionName '0.18.0-alpha60'
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
     }
 
     signingConfigs {
@@ -42,8 +45,8 @@ android {
     }
 }
 
-// Alpha60 keeps STEP/OCCT unchanged and obtains LiteRT from Google Play services,
-// avoiding additional native libraries in the APK while the custom model package remains updateable.
+// Alpha60 preserves the 25-library STEP/OCCT closure. Google Play services supplies
+// the LiteRT engine and may package only a small client bridge, which is audited separately.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
