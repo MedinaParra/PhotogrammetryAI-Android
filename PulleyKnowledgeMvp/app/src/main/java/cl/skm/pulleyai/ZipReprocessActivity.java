@@ -6,14 +6,17 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.text.InputType;
 import android.view.Gravity;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -23,19 +26,26 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
+import java.util.Locale;
 
-/** UI client for the persistent alpha55 foreground ZIP reprocessor. */
+/** UI client for persistent ZIP reprocessing and alpha59 prior-constrained cylinder inspection. */
 public final class ZipReprocessActivity extends Activity
         implements ZipReprocessForegroundService.Listener {
     private static final int OPEN_ZIP = 4510;
     private static final int SAVE_JSON = 4511;
     private static final int SAVE_PACKAGE = 4512;
     private static final int NOTIFICATION_PERMISSION = 4513;
+    private static final String DIMENSION_PREFS = "pulley_dimension_priors_alpha59";
+    private static final String PREF_LENGTH = "shellLengthMm";
+    private static final String PREF_DIAMETER = "shellDiameterMm";
 
     private TextView status;
+    private EditText lengthInput;
+    private EditText diameterInput;
     private Button selectButton;
     private Button retryButton;
-    private Button viewCloudButton;
+    private Button cylinderButton;
+    private Button rawCloudButton;
     private Button saveJsonButton;
     private Button savePackageButton;
 
@@ -62,6 +72,7 @@ public final class ZipReprocessActivity extends Activity
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         buildUi();
+        restoreDimensions();
         requestNotificationPermission();
     }
 
@@ -95,25 +106,36 @@ public final class ZipReprocessActivity extends Activity
         root.setBackgroundColor(Color.rgb(244, 247, 249));
         scroll.addView(root);
 
-        TextView title = text("REPROCESAR ZIP / RESULTADOS · ALPHA55 LAB2", 25, true);
+        TextView title = text("REPROCESAR ZIP / CILINDRO · ALPHA59 LAB2", 24, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
 
         TextView description = text(
-                "Versión 0.18.0-alpha55. El análisis se ejecuta como servicio persistente: "
-                        + "puede girar el equipo, cambiar de aplicación o apagar la pantalla sin perder "
-                        + "el ZIP ni reiniciar el roadmap. Una notificación muestra el progreso. "
-                        + "La nube semilla continúa sin escala métrica y no representa liberación industrial.",
-                14, false);
-        description.setPadding(0, dp(5), 0, dp(14));
+                "El ZIP continúa procesándose en el servicio persistente. El visor alpha59 mantiene la nube semilla cruda, "
+                        + "pero agrega un ajuste cilíndrico robusto alineado al eje del manto. Largo y diámetro son restricciones "
+                        + "conocidas: permiten orientar y escalar el modelo, pero no constituyen validación metrológica.",
+                13, false);
+        description.setPadding(0, dp(5), 0, dp(8));
         root.addView(description);
+
+        lengthInput = input("Largo conocido del manto [mm]");
+        diameterInput = input("Diámetro conocido del manto [mm]");
+        root.addView(lengthInput);
+        root.addView(diameterInput);
+
+        TextView priorWarning = text(
+                "Use dimensiones nominales o medidas previamente con instrumento. El ajuste mostrará FIT_ACCEPTED, FIT_WEAK o PRIOR_ONLY.",
+                11, true);
+        priorWarning.setTextColor(Color.rgb(125, 78, 0));
+        priorWarning.setPadding(0, dp(3), 0, dp(8));
+        root.addView(priorWarning);
 
         status = text("Conectando con el servicio de análisis…", 14, false);
         status.setPadding(dp(14), dp(13), dp(14), dp(13));
         status.setBackgroundColor(Color.WHITE);
         root.addView(status);
 
-        selectButton = button("SELECCIONAR Y ANALIZAR ZIP · ALPHA55");
+        selectButton = button("SELECCIONAR Y ANALIZAR ZIP · ALPHA59");
         selectButton.setOnClickListener(view -> openZipPicker());
         root.addView(selectButton);
 
@@ -122,10 +144,15 @@ public final class ZipReprocessActivity extends Activity
         retryButton.setOnClickListener(view -> retryLastZip());
         root.addView(retryButton);
 
-        viewCloudButton = button("VER RESULTADOS 3D / NUBE NO DISPONIBLE");
-        viewCloudButton.setEnabled(false);
-        viewCloudButton.setOnClickListener(view -> openPointCloud());
-        root.addView(viewCloudButton);
+        cylinderButton = button("AJUSTAR CILINDRO 3D · NUBE NO DISPONIBLE");
+        cylinderButton.setEnabled(false);
+        cylinderButton.setOnClickListener(view -> openCylinderModel());
+        root.addView(cylinderButton);
+
+        rawCloudButton = button("VER NUBE SEMILLA CRUDA");
+        rawCloudButton.setEnabled(false);
+        rawCloudButton.setOnClickListener(view -> openRawPointCloud());
+        root.addView(rawCloudButton);
 
         saveJsonButton = button("GUARDAR DECISIÓN FINAL JSON");
         saveJsonButton.setEnabled(false);
@@ -141,6 +168,60 @@ public final class ZipReprocessActivity extends Activity
         close.setOnClickListener(view -> finish());
         root.addView(close);
         setContentView(scroll);
+    }
+
+    private EditText input(String hint) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, dp(5), 0, 0);
+        input.setLayoutParams(params);
+        return input;
+    }
+
+    private void restoreDimensions() {
+        SharedPreferences prefs = getSharedPreferences(DIMENSION_PREFS, MODE_PRIVATE);
+        double length = Double.longBitsToDouble(prefs.getLong(PREF_LENGTH,
+                Double.doubleToRawLongBits(Double.NaN)));
+        double diameter = Double.longBitsToDouble(prefs.getLong(PREF_DIAMETER,
+                Double.doubleToRawLongBits(Double.NaN)));
+        if (Double.isFinite(length) && length > 0.0) {
+            lengthInput.setText(String.format(Locale.ROOT, "%.1f", length));
+        }
+        if (Double.isFinite(diameter) && diameter > 0.0) {
+            diameterInput.setText(String.format(Locale.ROOT, "%.1f", diameter));
+        }
+    }
+
+    private double[] requireDimensions() {
+        Double length = parsePositive(lengthInput.getText().toString());
+        Double diameter = parsePositive(diameterInput.getText().toString());
+        if (length == null) {
+            lengthInput.setError("Ingrese un largo mayor que cero");
+            lengthInput.requestFocus();
+            return null;
+        }
+        if (diameter == null) {
+            diameterInput.setError("Ingrese un diámetro mayor que cero");
+            diameterInput.requestFocus();
+            return null;
+        }
+        getSharedPreferences(DIMENSION_PREFS, MODE_PRIVATE).edit()
+                .putLong(PREF_LENGTH, Double.doubleToRawLongBits(length))
+                .putLong(PREF_DIAMETER, Double.doubleToRawLongBits(diameter))
+                .apply();
+        return new double[]{length, diameter};
+    }
+
+    private Double parsePositive(String text) {
+        try {
+            double value = Double.parseDouble(text == null ? "" : text.trim().replace(',', '.'));
+            return Double.isFinite(value) && value > 0.0 ? value : null;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private void requestNotificationPermission() {
@@ -171,7 +252,7 @@ public final class ZipReprocessActivity extends Activity
                 .putExtra(ZipReprocessForegroundService.EXTRA_SOURCE_URI, sourceUri.toString());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent);
         else startService(intent);
-        status.setText("alpha55 · análisis iniciado en segundo plano. Puede apagar la pantalla.");
+        status.setText("alpha59 · análisis iniciado en segundo plano. Puede apagar la pantalla.");
         status.setTextColor(Color.rgb(35, 84, 117));
         selectButton.setEnabled(false);
         retryButton.setEnabled(false);
@@ -182,18 +263,28 @@ public final class ZipReprocessActivity extends Activity
         startProcessing(Uri.parse(current.sourceUri));
     }
 
-    private void openPointCloud() {
+    private void openCylinderModel() {
         if (current == null || !current.hasSeedCloud()) {
-            Toast.makeText(this,
-                    "La etapa semilla no produjo coordenadas 3D visibles.",
-                    Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "La etapa semilla no produjo coordenadas 3D.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        double[] dimensions = requireDimensions();
+        if (dimensions == null) return;
+        Intent intent = new Intent(this, PulleyCylinderViewerActivity.class);
+        intent.putExtra(PulleyCylinderViewerActivity.EXTRA_REPORT_PATH, current.seedReportPath);
+        intent.putExtra(PulleyCylinderViewerActivity.EXTRA_SHELL_LENGTH_MM, dimensions[0]);
+        intent.putExtra(PulleyCylinderViewerActivity.EXTRA_SHELL_DIAMETER_MM, dimensions[1]);
+        startActivity(intent);
+    }
+
+    private void openRawPointCloud() {
+        if (current == null || !current.hasSeedCloud()) {
+            Toast.makeText(this, "La etapa semilla no produjo coordenadas 3D visibles.", Toast.LENGTH_LONG).show();
             return;
         }
         Intent intent = new Intent(this, PointCloudViewerActivity.class);
-        intent.putExtra(PointCloudViewerActivity.EXTRA_REPORT_PATH,
-                current.seedReportPath);
-        intent.putExtra(PointCloudViewerActivity.EXTRA_SUMMARY,
-                current.seedSummary);
+        intent.putExtra(PointCloudViewerActivity.EXTRA_REPORT_PATH, current.seedReportPath);
+        intent.putExtra(PointCloudViewerActivity.EXTRA_SUMMARY, current.seedSummary);
         startActivity(intent);
     }
 
@@ -202,23 +293,26 @@ public final class ZipReprocessActivity extends Activity
         boolean running = snapshot.running;
         selectButton.setEnabled(!running);
         retryButton.setEnabled(!running && !snapshot.sourceUri.isEmpty());
-        viewCloudButton.setEnabled(snapshot.hasSeedCloud());
+        cylinderButton.setEnabled(snapshot.hasSeedCloud());
+        rawCloudButton.setEnabled(snapshot.hasSeedCloud());
         saveJsonButton.setEnabled(snapshot.hasReport());
         savePackageButton.setEnabled(snapshot.hasPackage());
 
         selectButton.setText(running
                 ? "ANÁLISIS ACTIVO EN SEGUNDO PLANO"
-                : "SELECCIONAR Y ANALIZAR OTRO ZIP · ALPHA55");
+                : "SELECCIONAR Y ANALIZAR OTRO ZIP · ALPHA59");
         retryButton.setText(snapshot.sourceUri.isEmpty()
                 ? "REPROCESAR ÚLTIMO ZIP · NO DISPONIBLE"
                 : "REPROCESAR ÚLTIMO ZIP SIN SELECCIONARLO");
-        viewCloudButton.setText(snapshot.hasSeedCloud()
-                ? "VER RESULTADOS 3D · " + snapshot.seedPointCount + " PUNTOS"
-                : "VER RESULTADOS 3D / NUBE NO DISPONIBLE");
+        cylinderButton.setText(snapshot.hasSeedCloud()
+                ? "AJUSTAR CILINDRO 3D · " + snapshot.seedPointCount + " PUNTOS CRUDOS"
+                : "AJUSTAR CILINDRO 3D · NUBE NO DISPONIBLE");
+        rawCloudButton.setText(snapshot.hasSeedCloud()
+                ? "VER NUBE SEMILLA CRUDA · " + snapshot.seedPointCount + " PUNTOS"
+                : "VER NUBE SEMILLA CRUDA · NO DISPONIBLE");
 
         String lifecycle = running
-                ? "\n\nPROCESAMIENTO PERSISTENTE ACTIVO\n"
-                + "Puede girar el teléfono, bloquear la pantalla o usar otra aplicación."
+                ? "\n\nPROCESAMIENTO PERSISTENTE ACTIVO\nPuede girar el teléfono, bloquear la pantalla o usar otra aplicación."
                 : snapshot.completed
                 ? "\n\nANÁLISIS FINALIZADO Y ESTADO RECUPERABLE."
                 : snapshot.failed
