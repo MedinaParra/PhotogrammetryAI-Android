@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai.lab2'
         minSdk 24
         targetSdk 35
-        versionCode 59
-        versionName '0.18.0-alpha59'
+        versionCode 60
+        versionName '0.18.0-alpha60'
     }
 
     signingConfigs {
@@ -42,11 +42,13 @@ android {
     }
 }
 
-// Alpha59 keeps both the raw diagnostic Canvas viewer and a prior-constrained cylinder viewer.
+// Alpha60 keeps STEP/OCCT unchanged and obtains LiteRT from Google Play services,
+// avoiding additional native libraries in the APK while the custom model package remains updateable.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha59 Lab2')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha60 Lab2')
     }
     implementation files(cadcoreAar)
+    implementation 'com.google.android.gms:play-services-tflite-java:16.5.0'
 }
