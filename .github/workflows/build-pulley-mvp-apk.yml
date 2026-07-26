@@ -10,6 +10,7 @@ on:
     paths:
       - 'PulleyKnowledgeMvp/app/**'
       - 'PulleyKnowledgeMvp/tools/**'
+      - 'PulleyKnowledgeMvp/vision_training/**'
       - 'PulleyKnowledgeMvp/ci/**'
       - 'PulleyKnowledgeMvp/*.gradle'
       - 'PulleyKnowledgeMvp/gradle.properties'
@@ -18,6 +19,7 @@ on:
     paths:
       - 'PulleyKnowledgeMvp/app/**'
       - 'PulleyKnowledgeMvp/tools/**'
+      - 'PulleyKnowledgeMvp/vision_training/**'
       - 'PulleyKnowledgeMvp/ci/**'
       - 'PulleyKnowledgeMvp/*.gradle'
       - 'PulleyKnowledgeMvp/gradle.properties'
@@ -149,6 +151,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_canvas_viewer_validation_v74_test.sh
       - name: Test prior-constrained cylinder alignment and viewer
         run: bash PulleyKnowledgeMvp/tools/run_prior_cylinder_alignment_v75_test.sh
+      - name: Test YOLO11n-seg MobileNet scene-awareness contract
+        run: bash PulleyKnowledgeMvp/tools/run_vision_ai_scene_awareness_v76_test.sh
       - name: Fetch verified pruned STEP-enabled cadcore v2 release
         run: |
           set -euo pipefail
@@ -160,19 +164,20 @@ jobs:
           ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
           test "$ACTUAL" = "$EXPECTED"
           printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nNATIVE_LIBRARY_COUNT=25\n' "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
+          printf 'VISION_RUNTIME=GOOGLE_PLAY_SERVICES_LITERT\nVISION_RUNTIME_VERSION=16.5.0\nMODEL_WEIGHTS_BUNDLED=false\nCUSTOM_MODEL_PACKAGE_REQUIRED=true\n' | tee artifacts/VISION_RUNTIME.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build STEP-enabled alpha59 Lab2 APK
+      - name: Build STEP-enabled alpha60 Lab2 APK
         run: |
           set -o pipefail
           gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 | tee artifacts/gradle-build.log
-      - name: Upload alpha59 diagnostics
+      - name: Upload alpha60 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha59-build-diagnostic
+          name: SKM-Polea-AI-alpha60-build-diagnostic
           path: artifacts/
           if-no-files-found: warn
           retention-days: 14
@@ -180,7 +185,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          CHECK="$RUNNER_TEMP/alpha59-apk"
+          CHECK="$RUNNER_TEMP/alpha60-apk"
           rm -rf "$CHECK" && mkdir -p "$CHECK"
           unzip -q "$APK" -d "$CHECK"
           test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
@@ -196,14 +201,15 @@ jobs:
           test "$COUNT" -eq 25
           test ! -f "$CHECK/lib/arm64-v8a/libTKOpenGles.so"
           test ! -f "$CHECK/lib/arm64-v8a/libTKDEGLTF.so"
+          test -z "$(find "$CHECK" -type f -name '*.tflite' -print -quit)"
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha59-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          manifest=json.loads(Path("${{ runner.temp }}/alpha60-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
           assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
           assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha59 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          print("alpha60 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
           PY
       - name: Verify stable alpha test signature
         run: |
@@ -214,26 +220,29 @@ jobs:
       - name: Prepare artifact and clean validation ZIP
         run: |
           set -euo pipefail
-          APK_NAME=SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha59.apk
-          CLEAN_ZIP=SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha59-clean.zip
+          APK_NAME=SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha60.apk
+          CLEAN_ZIP=SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha60-clean.zip
           cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk "artifacts/$APK_NAME"
           sha256sum "artifacts/$APK_NAME" | tee artifacts/SHA256SUMS.txt
-          CLEAN_DIR="$RUNNER_TEMP/alpha59-clean"
+          CLEAN_DIR="$RUNNER_TEMP/alpha60-clean"
           rm -rf "$CLEAN_DIR"
           mkdir -p "$CLEAN_DIR"
           cp "artifacts/$APK_NAME" artifacts/SHA256SUMS.txt \
             artifacts/SIGNING_MODE.txt artifacts/SIGNING_CERTIFICATE.txt \
-            artifacts/CADCORE_RUNTIME.txt "$CLEAN_DIR/"
+            artifacts/CADCORE_RUNTIME.txt artifacts/VISION_RUNTIME.txt "$CLEAN_DIR/"
           printf '%s\n' \
-            'VERSION=0.18.0-alpha59' \
-            'VERSION_CODE=59' \
+            'VERSION=0.18.0-alpha60' \
+            'VERSION_CODE=60' \
             'APPLICATION_ID=cl.skm.pulleyai.lab2' \
             'ABI=arm64-v8a' \
             'RAW_CANVAS_VIEWER_GATE=PASS' \
             'PRIOR_CYLINDER_ALIGNMENT_GATE=PASS' \
+            'VISION_AI_SCENE_AWARENESS_GATE=PASS' \
+            'VISION_MODELS=YOLO11N_SEG_INT8_512_AND_MOBILENETV3_SMALL_INT8_224' \
+            'VISION_MODEL_WEIGHTS=NOT_BUNDLED_CUSTOM_TRAINING_REQUIRED' \
             'PHYSICAL_RAW_CANVAS_EVIDENCE=RECEIVED_FOR_ALPHA57' \
+            'VISION_RUNTIME_PHYSICAL_VALIDATION=PENDING' \
             'CYLINDER_VIEWER_PHYSICAL_VALIDATION=PENDING' \
-            'METRIC_SCALE_SOURCE=KNOWN_LENGTH_AND_DIAMETER_PRIOR' \
             'METROLOGICAL_VALIDATION=NOT_CLAIMED' \
             > "$CLEAN_DIR/VALIDATION_SCOPE.txt"
           (cd "$CLEAN_DIR" && zip -q "$GITHUB_WORKSPACE/artifacts/$CLEAN_ZIP" ./*)
@@ -241,7 +250,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha59
+          name: SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha60
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
