@@ -2,15 +2,17 @@ package cl.skm.pulleyai;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.PixelFormat;
+import android.graphics.Insets;
+import android.graphics.Paint;
 import android.net.Uri;
-import android.opengl.GLES20;
-import android.opengl.GLSurfaceView;
-import android.opengl.Matrix;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.View;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -25,21 +27,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import javax.microedition.khronos.egl.EGLConfig;
-import javax.microedition.khronos.opengles.GL10;
-
 /**
- * High-contrast OpenGL ES viewer for bounded, non-metric seed point clouds.
- * Alpha56 always renders a black environment, white points, a reference grid
- * and conventional X/Y/Z axes so an empty cloud cannot look like a renderer failure.
+ * Alpha57 point-cloud viewer.
+ *
+ * The previous OpenGL surface could remain black on some Samsung/Honor drivers even
+ * when the JSON contained valid points. This viewer performs the 3D rotation and
+ * orthographic projection in Java and draws with Android Canvas, avoiding shaders,
+ * EGL configuration and device-specific GL surface composition.
  */
 public final class PointCloudViewerActivity extends Activity {
     public static final String EXTRA_REPORT_PATH = "cl.skm.pulleyai.extra.SEED_REPORT_PATH";
@@ -48,7 +47,7 @@ public final class PointCloudViewerActivity extends Activity {
     private static final int SAVE_XYZ = 5802;
 
     private CloudData cloud;
-    private CloudSurfaceView surface;
+    private CloudCanvasView surface;
     private TextView information;
 
     @Override protected void onCreate(Bundle state) {
@@ -79,37 +78,37 @@ public final class PointCloudViewerActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
-        root.setPadding(dp(10), dp(8), dp(10), dp(8));
+        applySystemBarInsets(root);
 
-        TextView title = text("RESULTADOS 3D · ALPHA56 LAB2", 21, true);
+        TextView title = text("RESULTADOS 3D · ALPHA57 LAB2", 20, true);
         title.setTextColor(Color.WHITE);
         root.addView(title);
 
         information = text(cloud.summary(), 13, false);
         information.setTextColor(Color.WHITE);
-        information.setPadding(0, dp(3), 0, dp(5));
+        information.setPadding(0, dp(3), 0, dp(4));
         root.addView(information);
 
         TextView legend = text(
-                "PUNTOS BLANCOS  ·  X ROJO  ·  Y VERDE  ·  Z AZUL  ·  REJILLA GRIS  ·  ORIGEN 0,0,0",
+                "VISOR CANVAS COMPATIBLE  ·  PUNTOS BLANCOS  ·  X ROJO  ·  Y VERDE  ·  Z AZUL",
                 12, true);
         legend.setTextColor(Color.LTGRAY);
         legend.setGravity(Gravity.CENTER_HORIZONTAL);
-        legend.setPadding(0, 0, 0, dp(4));
+        legend.setPadding(0, 0, 0, dp(3));
         root.addView(legend);
 
-        surface = new CloudSurfaceView(cloud);
+        surface = new CloudCanvasView(cloud);
         root.addView(surface, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         if (cloud.points.isEmpty()) {
             TextView warning = text(
-                    "SIN PUNTOS 3D VÁLIDOS: se muestran los ejes para confirmar que el visor funciona. "
+                    "SIN PUNTOS 3D VÁLIDOS: los ejes y la rejilla siguen visibles. "
                             + "El archivo contenía " + cloud.rawPointCount + " registros y se descartaron "
-                            + cloud.invalidPointCount + " coordenadas NaN/∞ o inválidas.",
+                            + cloud.invalidPointCount + " coordenadas inválidas.",
                     13, true);
             warning.setTextColor(Color.rgb(255, 190, 150));
             warning.setGravity(Gravity.CENTER_HORIZONTAL);
-            warning.setPadding(0, dp(4), 0, dp(2));
+            warning.setPadding(0, dp(3), 0, dp(2));
             root.addView(warning);
         }
 
@@ -118,21 +117,21 @@ public final class PointCloudViewerActivity extends Activity {
         reset.setOnClickListener(view -> surface.resetView());
         controls.addView(reset, weight());
         Button smaller = button("PUNTO −");
-        smaller.setOnClickListener(view -> surface.changePointSize(-2f));
+        smaller.setOnClickListener(view -> surface.changePointSize(-1.5f));
         controls.addView(smaller, weight());
         Button larger = button("PUNTO +");
-        larger.setOnClickListener(view -> surface.changePointSize(2f));
+        larger.setOnClickListener(view -> surface.changePointSize(1.5f));
         controls.addView(larger, weight());
         root.addView(controls);
 
         LinearLayout exports = row();
         Button ply = button("EXPORTAR PLY");
         ply.setEnabled(!cloud.points.isEmpty());
-        ply.setOnClickListener(view -> chooseExport(SAVE_PLY, "nube_semilla_alpha56.ply"));
+        ply.setOnClickListener(view -> chooseExport(SAVE_PLY, "nube_semilla_alpha57.ply"));
         exports.addView(ply, weight());
         Button xyz = button("EXPORTAR XYZ");
         xyz.setEnabled(!cloud.points.isEmpty());
-        xyz.setOnClickListener(view -> chooseExport(SAVE_XYZ, "nube_semilla_alpha56.xyz"));
+        xyz.setOnClickListener(view -> chooseExport(SAVE_XYZ, "nube_semilla_alpha57.xyz"));
         exports.addView(xyz, weight());
         Button close = button("VOLVER");
         close.setOnClickListener(view -> finish());
@@ -140,6 +139,34 @@ public final class PointCloudViewerActivity extends Activity {
         root.addView(exports);
 
         setContentView(root);
+        root.requestApplyInsets();
+    }
+
+    private void applySystemBarInsets(LinearLayout root) {
+        final int baseHorizontal = dp(10);
+        final int baseVertical = dp(8);
+        root.setPadding(baseHorizontal, baseVertical, baseHorizontal, baseVertical);
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int left;
+            int top;
+            int right;
+            int bottom;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                left = bars.left;
+                top = bars.top;
+                right = bars.right;
+                bottom = bars.bottom;
+            } else {
+                left = insets.getSystemWindowInsetLeft();
+                top = insets.getSystemWindowInsetTop();
+                right = insets.getSystemWindowInsetRight();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(baseHorizontal + left, baseVertical + top,
+                    baseHorizontal + right, baseVertical + bottom);
+            return insets;
+        });
     }
 
     private void chooseExport(int requestCode, String name) {
@@ -168,16 +195,6 @@ public final class PointCloudViewerActivity extends Activity {
             Toast.makeText(this, error.getMessage() == null
                     ? "No se pudo exportar" : error.getMessage(), Toast.LENGTH_LONG).show();
         }
-    }
-
-    @Override protected void onResume() {
-        super.onResume();
-        if (surface != null) surface.onResume();
-    }
-
-    @Override protected void onPause() {
-        if (surface != null) surface.onPause();
-        super.onPause();
     }
 
     private LinearLayout row() {
@@ -212,26 +229,155 @@ public final class PointCloudViewerActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private final class CloudSurfaceView extends GLSurfaceView {
-        private final CloudRenderer renderer;
+    private final class CloudCanvasView extends View {
+        private static final float AXIS_LENGTH = 1.65f;
+        private final float[] normalizedPoints;
+        private final Paint gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint xPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint yPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint zPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint pointPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint originPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint statusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private float yaw = -35f;
+        private float pitch = 22f;
+        private float zoom = 1f;
+        private float pointRadius;
         private float previousX;
         private float previousY;
         private float previousDistance;
 
-        CloudSurfaceView(CloudData data) {
+        CloudCanvasView(CloudData data) {
             super(PointCloudViewerActivity.this);
-            getHolder().setFormat(PixelFormat.OPAQUE);
-            setEGLContextClientVersion(2);
-            setEGLConfigChooser(8, 8, 8, 8, 16, 0);
-            setPreserveEGLContextOnPause(true);
             setBackgroundColor(Color.BLACK);
-            renderer = new CloudRenderer(data);
-            setRenderer(renderer);
-            // Continuous rendering avoids device-specific first-frame loss after resume/rotation.
-            setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+            setFocusable(true);
+            normalizedPoints = normalize(data.points);
+            float density = getResources().getDisplayMetrics().density;
+            pointRadius = 3.2f * density;
+
+            gridPaint.setColor(Color.rgb(65, 65, 65));
+            gridPaint.setStyle(Paint.Style.STROKE);
+            gridPaint.setStrokeWidth(Math.max(1f, density));
+
+            configureAxisPaint(xPaint, Color.rgb(255, 55, 55), 2.2f * density);
+            configureAxisPaint(yPaint, Color.rgb(70, 255, 95), 2.2f * density);
+            configureAxisPaint(zPaint, Color.rgb(65, 135, 255), 2.2f * density);
+
+            pointPaint.setColor(Color.WHITE);
+            pointPaint.setStyle(Paint.Style.FILL);
+            originPaint.setColor(Color.rgb(255, 215, 40));
+            originPaint.setStyle(Paint.Style.FILL);
+
+            labelPaint.setStyle(Paint.Style.FILL);
+            labelPaint.setTextSize(14f * density);
+            labelPaint.setFakeBoldText(true);
+            statusPaint.setColor(Color.LTGRAY);
+            statusPaint.setTextSize(10f * density);
+        }
+
+        private void configureAxisPaint(Paint paint, int color, float width) {
+            paint.setColor(color);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(width);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            canvas.drawColor(Color.BLACK);
+            int width = getWidth();
+            int height = getHeight();
+            if (width <= 1 || height <= 1) return;
+
+            float centerX = width * 0.5f;
+            float centerY = height * 0.5f;
+            float scale = Math.min(width, height) * 0.31f * zoom;
+
+            drawGrid(canvas, centerX, centerY, scale);
+            drawCloud(canvas, centerX, centerY, scale);
+            drawAxes(canvas, centerX, centerY, scale);
+
+            String status = "CANVAS 3D · " + (normalizedPoints.length / 3)
+                    + " PUNTOS · ARRASTRAR=GIRAR · PINZA=ZOOM";
+            canvas.drawText(status, dp(8), height - dp(8), statusPaint);
+        }
+
+        private void drawGrid(Canvas canvas, float centerX, float centerY, float scale) {
+            float limit = 1.5f;
+            float step = 0.25f;
+            for (float value = -limit; value <= limit + 0.001f; value += step) {
+                drawLine3d(canvas, -limit, 0f, value, limit, 0f, value,
+                        centerX, centerY, scale, gridPaint);
+                drawLine3d(canvas, value, 0f, -limit, value, 0f, limit,
+                        centerX, centerY, scale, gridPaint);
+            }
+        }
+
+        private void drawCloud(Canvas canvas, float centerX, float centerY, float scale) {
+            for (int i = 0; i < normalizedPoints.length; i += 3) {
+                ScreenPoint point = project(normalizedPoints[i], normalizedPoints[i + 1],
+                        normalizedPoints[i + 2], centerX, centerY, scale);
+                canvas.drawCircle(point.x, point.y, pointRadius, pointPaint);
+            }
+        }
+
+        private void drawAxes(Canvas canvas, float centerX, float centerY, float scale) {
+            drawLine3d(canvas, -AXIS_LENGTH, 0f, 0f, AXIS_LENGTH, 0f, 0f,
+                    centerX, centerY, scale, xPaint);
+            drawLine3d(canvas, 0f, -AXIS_LENGTH, 0f, 0f, AXIS_LENGTH, 0f,
+                    centerX, centerY, scale, yPaint);
+            drawLine3d(canvas, 0f, 0f, -AXIS_LENGTH, 0f, 0f, AXIS_LENGTH,
+                    centerX, centerY, scale, zPaint);
+
+            ScreenPoint origin = project(0f, 0f, 0f, centerX, centerY, scale);
+            canvas.drawCircle(origin.x, origin.y, Math.max(dp(4), pointRadius * 0.8f), originPaint);
+
+            drawAxisLabel(canvas, "X", AXIS_LENGTH, 0f, 0f,
+                    centerX, centerY, scale, xPaint.getColor());
+            drawAxisLabel(canvas, "Y", 0f, AXIS_LENGTH, 0f,
+                    centerX, centerY, scale, yPaint.getColor());
+            drawAxisLabel(canvas, "Z", 0f, 0f, AXIS_LENGTH,
+                    centerX, centerY, scale, zPaint.getColor());
+        }
+
+        private void drawAxisLabel(Canvas canvas, String label, float x, float y, float z,
+                                   float centerX, float centerY, float scale, int color) {
+            ScreenPoint point = project(x, y, z, centerX, centerY, scale);
+            labelPaint.setColor(color);
+            canvas.drawText(label, point.x + dp(5), point.y - dp(5), labelPaint);
+        }
+
+        private void drawLine3d(Canvas canvas,
+                                float x1, float y1, float z1,
+                                float x2, float y2, float z2,
+                                float centerX, float centerY, float scale, Paint paint) {
+            ScreenPoint a = project(x1, y1, z1, centerX, centerY, scale);
+            ScreenPoint b = project(x2, y2, z2, centerX, centerY, scale);
+            canvas.drawLine(a.x, a.y, b.x, b.y, paint);
+        }
+
+        private ScreenPoint project(float x, float y, float z,
+                                    float centerX, float centerY, float scale) {
+            double yawRadians = Math.toRadians(yaw);
+            double pitchRadians = Math.toRadians(pitch);
+            double cosYaw = Math.cos(yawRadians);
+            double sinYaw = Math.sin(yawRadians);
+            double cosPitch = Math.cos(pitchRadians);
+            double sinPitch = Math.sin(pitchRadians);
+
+            double rotatedX = cosYaw * x + sinYaw * z;
+            double yawZ = -sinYaw * x + cosYaw * z;
+            double rotatedY = cosPitch * y - sinPitch * yawZ;
+            double rotatedZ = sinPitch * y + cosPitch * yawZ;
+            return new ScreenPoint(
+                    centerX + (float) rotatedX * scale,
+                    centerY - (float) rotatedY * scale,
+                    (float) rotatedZ);
         }
 
         @Override public boolean onTouchEvent(MotionEvent event) {
+            getParent().requestDisallowInterceptTouchEvent(true);
             if (event.getPointerCount() >= 2) {
                 float dx = event.getX(0) - event.getX(1);
                 float dy = event.getY(0) - event.getY(1);
@@ -241,15 +387,27 @@ public final class PointCloudViewerActivity extends Activity {
                     previousDistance = distance;
                 } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE
                         && previousDistance > 1f && distance > 1f) {
-                    renderer.zoom(distance / previousDistance);
+                    zoom = clamp(zoom * distance / previousDistance, 0.25f, 7f);
                     previousDistance = distance;
+                    invalidate();
                 }
                 return true;
             }
+
             float x = event.getX();
             float y = event.getY();
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                previousX = x;
+                previousY = y;
+                return true;
+            }
             if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-                renderer.rotate((x - previousX) * 0.45f, (y - previousY) * 0.45f);
+                yaw += (x - previousX) * 0.35f;
+                pitch = clamp(pitch + (y - previousY) * 0.35f, -89f, 89f);
+                previousX = x;
+                previousY = y;
+                invalidate();
+                return true;
             }
             previousX = x;
             previousY = y;
@@ -257,262 +415,68 @@ public final class PointCloudViewerActivity extends Activity {
         }
 
         void resetView() {
-            renderer.reset();
-            information.setText(cloud.summary() + "\nVista centrada automáticamente");
-        }
-
-        void changePointSize(float delta) {
-            renderer.changePointSize(delta);
-            information.setText(cloud.summary() + String.format(Locale.ROOT,
-                    "\nTamaño visual de punto %.1f px", renderer.pointSize()));
-        }
-    }
-
-    private static final class CloudRenderer implements GLSurfaceView.Renderer {
-        private static final float AXIS_LENGTH = 1.65f;
-        private static final String VERTEX_SHADER =
-                "uniform mat4 u_Mvp;\n"
-                        + "uniform float u_PointSize;\n"
-                        + "attribute vec3 a_Position;\n"
-                        + "void main(){ gl_Position=u_Mvp*vec4(a_Position,1.0);"
-                        + " gl_PointSize=u_PointSize; }";
-        private static final String POINT_FRAGMENT_SHADER =
-                "precision mediump float;\n"
-                        + "uniform vec4 u_Color;\n"
-                        + "void main(){ vec2 p=gl_PointCoord-vec2(0.5);"
-                        + " if(dot(p,p)>0.25) discard; gl_FragColor=u_Color; }";
-        private static final String LINE_FRAGMENT_SHADER =
-                "precision mediump float;\n"
-                        + "uniform vec4 u_Color;\n"
-                        + "void main(){ gl_FragColor=u_Color; }";
-
-        private final FloatBuffer points;
-        private final FloatBuffer grid;
-        private final FloatBuffer xAxis;
-        private final FloatBuffer yAxis;
-        private final FloatBuffer zAxis;
-        private final FloatBuffer origin;
-        private final int pointCount;
-        private final int gridVertexCount;
-        private final float[] projection = new float[16];
-        private final float[] model = new float[16];
-        private final float[] mvp = new float[16];
-        private int pointProgram;
-        private int lineProgram;
-        private float yaw = -35f;
-        private float pitch = 22f;
-        private float zoom = 1f;
-        private float pointSize = 10f;
-        private float aspect = 1f;
-
-        CloudRenderer(CloudData data) {
-            float[] normalized = normalize(data.points);
-            pointCount = normalized.length / 3;
-            points = direct(normalized);
-            float[] gridValues = createGrid();
-            gridVertexCount = gridValues.length / 3;
-            grid = direct(gridValues);
-            xAxis = direct(new float[]{-AXIS_LENGTH, 0, 0, AXIS_LENGTH, 0, 0});
-            yAxis = direct(new float[]{0, -AXIS_LENGTH, 0, 0, AXIS_LENGTH, 0});
-            zAxis = direct(new float[]{0, 0, -AXIS_LENGTH, 0, 0, AXIS_LENGTH});
-            origin = direct(new float[]{0, 0, 0});
-        }
-
-        @Override public void onSurfaceCreated(GL10 gl, EGLConfig config) {
-            GLES20.glClearColor(0f, 0f, 0f, 1f);
-            GLES20.glDisable(GLES20.GL_CULL_FACE);
-            GLES20.glEnable(GLES20.GL_DEPTH_TEST);
-            GLES20.glDepthFunc(GLES20.GL_LEQUAL);
-            pointProgram = link(VERTEX_SHADER, POINT_FRAGMENT_SHADER);
-            lineProgram = link(VERTEX_SHADER, LINE_FRAGMENT_SHADER);
-        }
-
-        @Override public void onSurfaceChanged(GL10 gl, int width, int height) {
-            int safeWidth = Math.max(1, width);
-            int safeHeight = Math.max(1, height);
-            GLES20.glViewport(0, 0, safeWidth, safeHeight);
-            aspect = (float) safeWidth / (float) safeHeight;
-        }
-
-        @Override public void onDrawFrame(GL10 gl) {
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
-            updateMvp();
-
-            drawLines(grid, gridVertexCount, 0.20f, 0.20f, 0.20f, 1f, 1f);
-            drawLines(xAxis, 2, 1f, 0.15f, 0.15f, 1f, 3f);
-            drawLines(yAxis, 2, 0.15f, 1f, 0.25f, 1f, 3f);
-            drawLines(zAxis, 2, 0.15f, 0.45f, 1f, 1f, 3f);
-
-            // Draw the origin and cloud without depth rejection so they remain visible.
-            GLES20.glDisable(GLES20.GL_DEPTH_TEST);
-            drawPoints(origin, 1, 13f, 1f, 0.85f, 0.15f, 1f);
-            if (pointCount > 0) {
-                drawPoints(points, pointCount, pointSize, 1f, 1f, 1f, 1f);
-            }
-            GLES20.glEnable(GLES20.GL_DEPTH_TEST);
-        }
-
-        private void updateMvp() {
-            float extent = 2.05f / Math.max(0.20f, zoom);
-            float horizontal = aspect >= 1f ? extent * aspect : extent;
-            float vertical = aspect >= 1f ? extent : extent / Math.max(0.20f, aspect);
-            Matrix.orthoM(projection, 0,
-                    -horizontal, horizontal, -vertical, vertical, -8f, 8f);
-            Matrix.setIdentityM(model, 0);
-            Matrix.rotateM(model, 0, pitch, 1f, 0f, 0f);
-            Matrix.rotateM(model, 0, yaw, 0f, 1f, 0f);
-            Matrix.multiplyMM(mvp, 0, projection, 0, model, 0);
-        }
-
-        private void drawLines(FloatBuffer buffer, int vertices,
-                               float r, float g, float b, float a, float width) {
-            if (lineProgram == 0 || vertices <= 0) return;
-            GLES20.glUseProgram(lineProgram);
-            int position = GLES20.glGetAttribLocation(lineProgram, "a_Position");
-            int matrix = GLES20.glGetUniformLocation(lineProgram, "u_Mvp");
-            int size = GLES20.glGetUniformLocation(lineProgram, "u_PointSize");
-            int color = GLES20.glGetUniformLocation(lineProgram, "u_Color");
-            GLES20.glUniformMatrix4fv(matrix, 1, false, mvp, 0);
-            GLES20.glUniform1f(size, 1f);
-            GLES20.glUniform4f(color, r, g, b, a);
-            GLES20.glLineWidth(width);
-            buffer.position(0);
-            GLES20.glEnableVertexAttribArray(position);
-            GLES20.glVertexAttribPointer(position, 3, GLES20.GL_FLOAT, false, 0, buffer);
-            GLES20.glDrawArrays(GLES20.GL_LINES, 0, vertices);
-            GLES20.glDisableVertexAttribArray(position);
-        }
-
-        private void drawPoints(FloatBuffer buffer, int vertices, float sizePx,
-                                float r, float g, float b, float a) {
-            if (pointProgram == 0 || vertices <= 0) return;
-            GLES20.glUseProgram(pointProgram);
-            int position = GLES20.glGetAttribLocation(pointProgram, "a_Position");
-            int matrix = GLES20.glGetUniformLocation(pointProgram, "u_Mvp");
-            int size = GLES20.glGetUniformLocation(pointProgram, "u_PointSize");
-            int color = GLES20.glGetUniformLocation(pointProgram, "u_Color");
-            GLES20.glUniformMatrix4fv(matrix, 1, false, mvp, 0);
-            GLES20.glUniform1f(size, sizePx);
-            GLES20.glUniform4f(color, r, g, b, a);
-            buffer.position(0);
-            GLES20.glEnableVertexAttribArray(position);
-            GLES20.glVertexAttribPointer(position, 3, GLES20.GL_FLOAT, false, 0, buffer);
-            GLES20.glDrawArrays(GLES20.GL_POINTS, 0, vertices);
-            GLES20.glDisableVertexAttribArray(position);
-        }
-
-        void rotate(float dx, float dy) {
-            yaw += dx;
-            pitch = clamp(pitch + dy, -89f, 89f);
-        }
-
-        void zoom(float ratio) {
-            if (!Float.isFinite(ratio) || ratio <= 0f) return;
-            zoom = clamp(zoom * ratio, 0.25f, 7f);
-        }
-
-        void reset() {
             yaw = -35f;
             pitch = 22f;
             zoom = 1f;
-            pointSize = 10f;
+            pointRadius = 3.2f * getResources().getDisplayMetrics().density;
+            information.setText(cloud.summary() + "\nVisor Canvas centrado automáticamente");
+            invalidate();
         }
 
-        void changePointSize(float delta) {
-            pointSize = clamp(pointSize + delta, 3f, 30f);
+        void changePointSize(float deltaDp) {
+            float density = getResources().getDisplayMetrics().density;
+            pointRadius = clamp(pointRadius + deltaDp * density, 1.5f * density, 15f * density);
+            information.setText(cloud.summary() + String.format(Locale.ROOT,
+                    "\nDiámetro visual de punto %.1f px · Canvas 3D", pointRadius * 2f));
+            invalidate();
         }
 
-        float pointSize() { return pointSize; }
-
-        private static float[] normalize(List<PointCloudExportCore.Point> input) {
+        private float[] normalize(List<PointCloudExportCore.Point> input) {
             if (input == null || input.isEmpty()) return new float[0];
-            double minX = Double.POSITIVE_INFINITY, minY = Double.POSITIVE_INFINITY;
-            double minZ = Double.POSITIVE_INFINITY, maxX = Double.NEGATIVE_INFINITY;
-            double maxY = Double.NEGATIVE_INFINITY, maxZ = Double.NEGATIVE_INFINITY;
+            double minX = Double.POSITIVE_INFINITY;
+            double minY = Double.POSITIVE_INFINITY;
+            double minZ = Double.POSITIVE_INFINITY;
+            double maxX = Double.NEGATIVE_INFINITY;
+            double maxY = Double.NEGATIVE_INFINITY;
+            double maxZ = Double.NEGATIVE_INFINITY;
             for (PointCloudExportCore.Point point : input) {
-                minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
-                minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
-                minZ = Math.min(minZ, point.z); maxZ = Math.max(maxZ, point.z);
+                minX = Math.min(minX, point.x);
+                maxX = Math.max(maxX, point.x);
+                minY = Math.min(minY, point.y);
+                maxY = Math.max(maxY, point.y);
+                minZ = Math.min(minZ, point.z);
+                maxZ = Math.max(maxZ, point.z);
             }
-            double cx = (minX + maxX) * 0.5;
-            double cy = (minY + maxY) * 0.5;
-            double cz = (minZ + maxZ) * 0.5;
+            double centerX = (minX + maxX) * 0.5;
+            double centerY = (minY + maxY) * 0.5;
+            double centerZ = (minZ + maxZ) * 0.5;
             double span = Math.max(maxX - minX, Math.max(maxY - minY, maxZ - minZ));
             double scale = span > 1e-12 ? 2.45 / span : 1.0;
             float[] output = new float[input.size() * 3];
             for (int i = 0; i < input.size(); i++) {
                 PointCloudExportCore.Point point = input.get(i);
-                output[i * 3] = (float) ((point.x - cx) * scale);
-                output[i * 3 + 1] = (float) ((point.y - cy) * scale);
-                output[i * 3 + 2] = (float) ((point.z - cz) * scale);
+                output[i * 3] = (float) ((point.x - centerX) * scale);
+                output[i * 3 + 1] = (float) ((point.y - centerY) * scale);
+                output[i * 3 + 2] = (float) ((point.z - centerZ) * scale);
             }
             return output;
         }
+    }
 
-        private static float[] createGrid() {
-            List<Float> values = new ArrayList<Float>();
-            float limit = 1.5f;
-            float step = 0.25f;
-            for (float value = -limit; value <= limit + 0.001f; value += step) {
-                addLine(values, -limit, 0f, value, limit, 0f, value);
-                addLine(values, value, 0f, -limit, value, 0f, limit);
-            }
-            float[] output = new float[values.size()];
-            for (int i = 0; i < values.size(); i++) output[i] = values.get(i);
-            return output;
-        }
+    private static final class ScreenPoint {
+        final float x;
+        final float y;
+        final float depth;
 
-        private static void addLine(List<Float> values,
-                                    float x1, float y1, float z1,
-                                    float x2, float y2, float z2) {
-            values.add(x1); values.add(y1); values.add(z1);
-            values.add(x2); values.add(y2); values.add(z2);
+        ScreenPoint(float x, float y, float depth) {
+            this.x = x;
+            this.y = y;
+            this.depth = depth;
         }
+    }
 
-        private static FloatBuffer direct(float[] values) {
-            FloatBuffer buffer = ByteBuffer.allocateDirect(Math.max(1, values.length) * 4)
-                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            if (values.length > 0) buffer.put(values);
-            buffer.position(0);
-            return buffer;
-        }
-
-        private static int link(String vertex, String fragment) {
-            int vertexShader = compile(GLES20.GL_VERTEX_SHADER, vertex);
-            int fragmentShader = compile(GLES20.GL_FRAGMENT_SHADER, fragment);
-            int program = GLES20.glCreateProgram();
-            GLES20.glAttachShader(program, vertexShader);
-            GLES20.glAttachShader(program, fragmentShader);
-            GLES20.glLinkProgram(program);
-            int[] linked = new int[1];
-            GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linked, 0);
-            if (linked[0] == 0) {
-                String log = GLES20.glGetProgramInfoLog(program);
-                GLES20.glDeleteProgram(program);
-                throw new IllegalStateException("No se pudo enlazar visor OpenGL: " + log);
-            }
-            GLES20.glDeleteShader(vertexShader);
-            GLES20.glDeleteShader(fragmentShader);
-            return program;
-        }
-
-        private static int compile(int type, String source) {
-            int shader = GLES20.glCreateShader(type);
-            GLES20.glShaderSource(shader, source);
-            GLES20.glCompileShader(shader);
-            int[] compiled = new int[1];
-            GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compiled, 0);
-            if (compiled[0] == 0) {
-                String log = GLES20.glGetShaderInfoLog(shader);
-                GLES20.glDeleteShader(shader);
-                throw new IllegalStateException("No se pudo compilar visor OpenGL: " + log);
-            }
-            return shader;
-        }
-
-        private static float clamp(float value, float min, float max) {
-            return Math.max(min, Math.min(max, value));
-        }
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static final class CloudData {
@@ -562,7 +526,10 @@ public final class PointCloudViewerActivity extends Activity {
             if (array != null) {
                 for (int i = 0; i < array.length(); i++) {
                     JSONObject point = array.optJSONObject(i);
-                    if (point == null) { invalid++; continue; }
+                    if (point == null) {
+                        invalid++;
+                        continue;
+                    }
                     double x = point.optDouble("x", Double.NaN);
                     double y = point.optDouble("y", Double.NaN);
                     double z = point.optDouble("z", Double.NaN);
@@ -595,7 +562,7 @@ public final class PointCloudViewerActivity extends Activity {
             String scale = metricScale ? "ESCALA MÉTRICA" : "SIN ESCALA MÉTRICA";
             String quality = geometryReady ? "READY" : solved ? "REVIEW" : "BLOQUEADA";
             return classification + " · " + scale + " · " + quality
-                    + "\nPuntos JSON " + rawPointCount + " · válidos GPU " + points.size()
+                    + "\nPuntos JSON " + rawPointCount + " · válidos visor " + points.size()
                     + (invalidPointCount > 0 ? " · descartados " + invalidPointCount : "")
                     + (leftFrame >= 0 && rightFrame >= 0
                     ? " · par " + leftFrame + "-" + rightFrame : "")
