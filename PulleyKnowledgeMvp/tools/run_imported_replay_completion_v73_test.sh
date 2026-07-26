@@ -14,5 +14,7 @@ grep -q 'ImportedReplayCompletionAnalyzer.process' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
 grep -q 'ImportedReplayCompletionCore.evaluate' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ImportedReplayCompletionAnalyzer.java"
-grep -q "versionName '0.18.0-alpha53'" "$ROOT/app/build.gradle"
-echo 'imported replay completion v73 PASS'
+grep -q "versionName '0.18.0-alpha54'" "$ROOT/app/build.gradle"
+grep -q 'PointCloudViewerActivity' \
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
+echo 'imported replay completion v73 + alpha54 viewer PASS'
