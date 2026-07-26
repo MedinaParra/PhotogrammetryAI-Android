@@ -17,7 +17,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
 
-/** UI for complete imported replay software pipeline with explicit industrial boundary. */
+/** Imported replay pipeline with an explicit point-cloud result viewer. */
 public final class ZipReprocessActivity extends Activity {
     private static final int OPEN_ZIP = 4510;
     private static final int SAVE_JSON = 4511;
@@ -25,6 +25,7 @@ public final class ZipReprocessActivity extends Activity {
 
     private TextView status;
     private Button selectButton;
+    private Button viewCloudButton;
     private Button saveJsonButton;
     private Button savePackageButton;
     private volatile boolean processing;
@@ -50,12 +51,15 @@ public final class ZipReprocessActivity extends Activity {
         root.setBackgroundColor(Color.rgb(244, 247, 249));
         scroll.addView(root);
 
-        TextView title = text("REPROCESAR ZIP / ROADMAP · ALPHA53 LAB2", 25, true);
+        TextView title = text("REPROCESAR ZIP / RESULTADOS · ALPHA54 LAB2", 25, true);
         title.setTextColor(Color.rgb(18, 52, 73));
         root.addView(title);
 
         TextView description = text(
-                "Versión 0.18.0-alpha53. Ejecuta el flujo completo de software sobre el ZIP: preflight, matching, tracks, geometría semilla, componentes y evidencia de unión. El cierre puede llegar a 100 % del replay de software aunque la reconstrucción global, la escala métrica y la liberación industrial permanezcan bloqueadas por evidencia física pendiente.",
+                "Versión 0.18.0-alpha54. Ejecuta preflight, matching, tracks, geometría semilla, "
+                        + "componentes y evidencia de unión. Cuando existen coordenadas trianguladas habilita "
+                        + "un visor 3D táctil y exportación PLY/XYZ. La nube semilla continúa sin escala métrica "
+                        + "y no representa una liberación industrial.",
                 14, false);
         description.setPadding(0, dp(5), 0, dp(14));
         root.addView(description);
@@ -66,9 +70,14 @@ public final class ZipReprocessActivity extends Activity {
         status.setBackgroundColor(Color.WHITE);
         root.addView(status);
 
-        selectButton = button("SELECCIONAR Y COMPLETAR ROADMAP · ALPHA53");
+        selectButton = button("SELECCIONAR Y ANALIZAR ZIP · ALPHA54");
         selectButton.setOnClickListener(view -> openZipPicker());
         root.addView(selectButton);
+
+        viewCloudButton = button("VER RESULTADOS 3D / NUBE DE PUNTOS");
+        viewCloudButton.setEnabled(false);
+        viewCloudButton.setOnClickListener(view -> openPointCloud());
+        root.addView(viewCloudButton);
 
         saveJsonButton = button("GUARDAR DECISIÓN FINAL JSON");
         saveJsonButton.setEnabled(false);
@@ -96,6 +105,22 @@ public final class ZipReprocessActivity extends Activity {
         startActivityForResult(intent, OPEN_ZIP);
     }
 
+    private void openPointCloud() {
+        if (!hasSeedCloud()) {
+            Toast.makeText(this,
+                    seedResult == null
+                            ? "Primero complete el análisis del ZIP"
+                            : "La etapa semilla no produjo coordenadas 3D visibles",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        Intent intent = new Intent(this, PointCloudViewerActivity.class);
+        intent.putExtra(PointCloudViewerActivity.EXTRA_REPORT_PATH,
+                seedResult.reportFile.getAbsolutePath());
+        intent.putExtra(PointCloudViewerActivity.EXTRA_SUMMARY, seedResult.summary);
+        startActivity(intent);
+    }
+
     private void startProcessing(Uri sourceUri) {
         processing = true;
         normalizedResult = null;
@@ -106,9 +131,10 @@ public final class ZipReprocessActivity extends Activity {
         bridgeResult = null;
         completionResult = null;
         selectButton.setEnabled(false);
+        viewCloudButton.setEnabled(false);
         saveJsonButton.setEnabled(false);
         savePackageButton.setEnabled(false);
-        status.setText("alpha53 · iniciando preflight del ZIP…");
+        status.setText("alpha54 · iniciando preflight del ZIP…");
         status.setTextColor(Color.rgb(35, 84, 117));
         new Thread(() -> {
             CaptureZipNormalizer.Result normalized = null;
@@ -156,10 +182,16 @@ public final class ZipReprocessActivity extends Activity {
                                 preflight.summary + "\n\n" + message)));
                 seedResult = seed;
                 final ImportedSeedGeometryZipAnalyzer.Result alpha50 = seed;
-                runOnUiThread(() -> status.setText(preflight.summary + "\n\n"
-                        + alpha47.summary + "\n\n" + alpha48.summary
-                        + "\n\n" + alpha50.summary
-                        + "\n\nAnalizando componentes del grafo…"));
+                runOnUiThread(() -> {
+                    refreshCloudButton();
+                    status.setText(preflight.summary + "\n\n"
+                            + alpha47.summary + "\n\n" + alpha48.summary
+                            + "\n\n" + alpha50.summary
+                            + (hasSeedCloud()
+                            ? "\n\nNube semilla disponible: puede abrir RESULTADOS 3D mientras continúa el roadmap."
+                            : "\n\nLa etapa semilla no produjo puntos visibles.")
+                            + "\n\nAnalizando componentes del grafo…");
+                });
 
                 components = ImportedComponentGeometryAnalyzer.process(
                         ZipReprocessActivity.this, alpha48, alpha50,
@@ -198,7 +230,7 @@ public final class ZipReprocessActivity extends Activity {
                         availableMultiscale, availableTracks, availableSeed,
                         availableComponents, availableBridge, error));
             }
-        }, "Alpha53SoftwareRoadmapReprocessor").start();
+        }, "Alpha54SoftwareRoadmapReprocessor").start();
     }
 
     private void showCompleted(CaptureZipNormalizer.Result preflight,
@@ -217,12 +249,14 @@ public final class ZipReprocessActivity extends Activity {
         bridgeResult = bridge;
         completionResult = completion;
         selectButton.setEnabled(true);
+        refreshCloudButton();
         saveJsonButton.setEnabled(true);
         savePackageButton.setEnabled(true);
         status.setText(preflight.summary + "\n\n" + alpha47.summary
                 + "\n\n" + tracks.summary + "\n\n" + seed.summary
                 + "\n\n" + components.summary + "\n\n" + bridge.summary
-                + "\n\n" + completion.summary);
+                + "\n\n" + completion.summary
+                + cloudAvailabilityText());
         status.setTextColor(completion.completion.softwareReplayComplete
                 ? Color.rgb(25, 108, 65) : Color.rgb(150, 30, 30));
     }
@@ -243,6 +277,7 @@ public final class ZipReprocessActivity extends Activity {
         bridgeResult = bridge;
         completionResult = null;
         selectButton.setEnabled(true);
+        refreshCloudButton();
         saveJsonButton.setEnabled(preflight != null || multiscale != null
                 || tracks != null || seed != null || components != null || bridge != null);
         savePackageButton.setEnabled(multiscale != null || tracks != null
@@ -257,9 +292,34 @@ public final class ZipReprocessActivity extends Activity {
         if (components != null) append(available, components.summary);
         if (bridge != null) append(available, bridge.summary);
         append(available, "ROADMAP SOFTWARE INCOMPLETO\n" + message
-                + "\nPuede guardar la evidencia de la última etapa completada.");
+                + "\nPuede guardar la evidencia de la última etapa completada."
+                + cloudAvailabilityText());
         status.setText(available.toString());
         status.setTextColor(Color.rgb(150, 30, 30));
+    }
+
+    private boolean hasSeedCloud() {
+        return seedResult != null
+                && seedResult.reportFile != null
+                && seedResult.reportFile.isFile()
+                && seedResult.geometry != null
+                && seedResult.geometry.cloud != null
+                && seedResult.geometry.cloud.points != null
+                && !seedResult.geometry.cloud.points.isEmpty();
+    }
+
+    private void refreshCloudButton() {
+        viewCloudButton.setEnabled(hasSeedCloud());
+        viewCloudButton.setText(hasSeedCloud()
+                ? "VER RESULTADOS 3D · " + seedResult.geometry.cloud.points.size() + " PUNTOS"
+                : "VER RESULTADOS 3D / NUBE NO DISPONIBLE");
+    }
+
+    private String cloudAvailabilityText() {
+        if (seedResult == null) return "\n\nNUBE 3D NO GENERADA: la etapa semilla no fue alcanzada.";
+        if (!hasSeedCloud()) return "\n\nNUBE 3D NO DISPONIBLE: no existen coordenadas trianguladas válidas.";
+        return "\n\nNUBE 3D DISPONIBLE: " + seedResult.geometry.cloud.points.size()
+                + " puntos semilla, sin escala métrica.";
     }
 
     private static void append(StringBuilder text, String value) {
