@@ -2,9 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
+    <uses-feature android:glEsVersion="0x00020000" android:required="false" />
     <application
         android:allowBackup="true"
-        android:label="SKM Polea AI Lab2 alpha53"
+        android:label="SKM Polea AI Lab2 alpha54"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".LauncherActivity"
@@ -17,6 +18,7 @@
         </activity>
         <activity android:name=".CaptureActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity android:name=".ZipReprocessActivity" android:exported="false" android:screenOrientation="landscape" />
+        <activity android:name=".PointCloudViewerActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity android:name=".RuntimeReviewActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity android:name=".DeviceCampaignActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity android:name=".CadAssemblyActivity" android:exported="false" android:screenOrientation="landscape" />
