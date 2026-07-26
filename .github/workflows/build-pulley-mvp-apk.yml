@@ -163,8 +163,8 @@ jobs:
           curl --fail --location --retry 4 --retry-delay 3 "$RELEASE_URL" --output "$TARGET"
           ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
           test "$ACTUAL" = "$EXPECTED"
-          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nNATIVE_LIBRARY_COUNT=25\n' "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
-          printf 'VISION_RUNTIME=GOOGLE_PLAY_SERVICES_LITERT\nVISION_RUNTIME_VERSION=16.5.0\nMODEL_WEIGHTS_BUNDLED=false\nCUSTOM_MODEL_PACKAGE_REQUIRED=true\n' | tee artifacts/VISION_RUNTIME.txt
+          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nSTEP_NATIVE_LIBRARY_COUNT=25\n' "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
+          printf 'VISION_RUNTIME=GOOGLE_PLAY_SERVICES_LITERT\nVISION_RUNTIME_VERSION=16.5.0\nTFLITE_CLIENT_LIBRARY=libtensorflowlite_jni_gms_client.so\nMODEL_WEIGHTS_BUNDLED=false\nCUSTOM_MODEL_PACKAGE_REQUIRED=true\n' | tee artifacts/VISION_RUNTIME.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -181,7 +181,7 @@ jobs:
           path: artifacts/
           if-no-files-found: warn
           retention-days: 14
-      - name: Verify pruned native STEP runtime packaging
+      - name: Verify STEP closure and LiteRT client packaging
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
@@ -194,22 +194,33 @@ jobs:
           test -f "$CHECK/lib/arm64-v8a/libTKBRep.so"
           test -f "$CHECK/lib/arm64-v8a/libTKMesh.so"
           test -f "$CHECK/lib/arm64-v8a/libc++_shared.so"
+          test -f "$CHECK/lib/arm64-v8a/libtensorflowlite_jni_gms_client.so"
           test -f "$CHECK/assets/occt/NATIVE_CLOSURE.json"
           test -d "$CHECK/assets/occt/XSTEPResource"
           test -d "$CHECK/assets/occt/SHMessage"
-          COUNT=$(find "$CHECK/lib/arm64-v8a" -maxdepth 1 -type f -name '*.so' | wc -l)
-          test "$COUNT" -eq 25
+          test -z "$(find "$CHECK/lib" -mindepth 1 -maxdepth 1 -type d ! -name 'arm64-v8a' -print -quit)"
+          find "$CHECK/lib/arm64-v8a" -maxdepth 1 -type f -name '*.so' -printf '%f\n' | sort | tee artifacts/APK_NATIVE_LIBRARIES.txt
+          TOTAL_COUNT=$(find "$CHECK/lib/arm64-v8a" -maxdepth 1 -type f -name '*.so' | wc -l)
+          test "$TOTAL_COUNT" -eq 26
           test ! -f "$CHECK/lib/arm64-v8a/libTKOpenGles.so"
           test ! -f "$CHECK/lib/arm64-v8a/libTKDEGLTF.so"
           test -z "$(find "$CHECK" -type f -name '*.tflite' -print -quit)"
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha60-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          root=Path("${{ runner.temp }}/alpha60-apk")
+          manifest=json.loads((root / "assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
-          assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
-          assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha60 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          expected={item["name"] for item in manifest["libraries"]}
+          actual={path.name for path in (root / "lib/arm64-v8a").glob("*.so")}
+          assert expected <= actual, sorted(expected - actual)
+          assert "libfreecad_android_bridge.so" in actual
+          assert "libtensorflowlite_jni_gms_client.so" in actual
+          assert len(expected) + 1 == 25
+          extras=actual - expected - {"libfreecad_android_bridge.so"}
+          assert extras == {"libtensorflowlite_jni_gms_client.so"}, sorted(extras)
+          assert "libTKOpenGles.so" not in actual
+          print("alpha60 STEP closure verified: 24 OCCT + bridge = 25; LiteRT client = 1")
           PY
       - name: Verify stable alpha test signature
         run: |
@@ -229,12 +240,15 @@ jobs:
           mkdir -p "$CLEAN_DIR"
           cp "artifacts/$APK_NAME" artifacts/SHA256SUMS.txt \
             artifacts/SIGNING_MODE.txt artifacts/SIGNING_CERTIFICATE.txt \
-            artifacts/CADCORE_RUNTIME.txt artifacts/VISION_RUNTIME.txt "$CLEAN_DIR/"
+            artifacts/CADCORE_RUNTIME.txt artifacts/VISION_RUNTIME.txt \
+            artifacts/APK_NATIVE_LIBRARIES.txt "$CLEAN_DIR/"
           printf '%s\n' \
             'VERSION=0.18.0-alpha60' \
             'VERSION_CODE=60' \
             'APPLICATION_ID=cl.skm.pulleyai.lab2' \
             'ABI=arm64-v8a' \
+            'STEP_NATIVE_LIBRARY_COUNT=25' \
+            'LITERT_CLIENT_NATIVE_LIBRARY_COUNT=1' \
             'RAW_CANVAS_VIEWER_GATE=PASS' \
             'PRIOR_CYLINDER_ALIGNMENT_GATE=PASS' \
             'VISION_AI_SCENE_AWARENESS_GATE=PASS' \
