@@ -145,6 +145,8 @@ jobs:
         run: bash PulleyKnowledgeMvp/tools/run_imported_bridge_evidence_v72_test.sh
       - name: Test honest software replay roadmap completion
         run: bash PulleyKnowledgeMvp/tools/run_imported_replay_completion_v73_test.sh
+      - name: Test Canvas viewer diagnostics and state restoration
+        run: bash PulleyKnowledgeMvp/tools/run_canvas_viewer_validation_v74_test.sh
       - name: Fetch verified pruned STEP-enabled cadcore v2 release
         run: |
           set -euo pipefail
@@ -160,15 +162,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build STEP-enabled alpha57 Lab2 APK
+      - name: Build STEP-enabled alpha58 Lab2 APK
         run: |
           set -o pipefail
           gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 | tee artifacts/gradle-build.log
-      - name: Upload alpha57 diagnostics
+      - name: Upload alpha58 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha57-build-diagnostic
+          name: SKM-Polea-AI-alpha58-build-diagnostic
           path: artifacts/
           if-no-files-found: warn
           retention-days: 14
@@ -176,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          CHECK="$RUNNER_TEMP/alpha57-apk"
+          CHECK="$RUNNER_TEMP/alpha58-apk"
           rm -rf "$CHECK" && mkdir -p "$CHECK"
           unzip -q "$APK" -d "$CHECK"
           test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
@@ -195,11 +197,11 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha57-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          manifest=json.loads(Path("${{ runner.temp }}/alpha58-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
           assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
           assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha57 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          print("alpha58 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
           PY
       - name: Verify stable alpha test signature
         run: |
@@ -207,14 +209,34 @@ jobs:
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
           keytool -printcert -jarfile "$APK" | tee artifacts/SIGNING_CERTIFICATE.txt
           grep -q "SKM Polea AI Alpha Lab" artifacts/SIGNING_CERTIFICATE.txt
-      - name: Prepare artifact
+      - name: Prepare artifact and clean validation ZIP
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha57.apk
-          sha256sum artifacts/SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha57.apk | tee artifacts/SHA256SUMS.txt
+          set -euo pipefail
+          APK_NAME=SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha58.apk
+          CLEAN_ZIP=SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha58-clean.zip
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk "artifacts/$APK_NAME"
+          sha256sum "artifacts/$APK_NAME" | tee artifacts/SHA256SUMS.txt
+          CLEAN_DIR="$RUNNER_TEMP/alpha58-clean"
+          rm -rf "$CLEAN_DIR"
+          mkdir -p "$CLEAN_DIR"
+          cp "artifacts/$APK_NAME" artifacts/SHA256SUMS.txt \
+            artifacts/SIGNING_MODE.txt artifacts/SIGNING_CERTIFICATE.txt \
+            artifacts/CADCORE_RUNTIME.txt "$CLEAN_DIR/"
+          printf '%s\n' \
+            'VERSION=0.18.0-alpha58' \
+            'VERSION_CODE=58' \
+            'APPLICATION_ID=cl.skm.pulleyai.lab2' \
+            'ABI=arm64-v8a' \
+            'CANVAS_VIEWER_STATIC_AND_BUILD_GATES=PASS' \
+            'PHYSICAL_DEVICE_VALIDATION=PENDING_USER_EVIDENCE' \
+            'METROLOGICAL_VALIDATION=NOT_CLAIMED' \
+            > "$CLEAN_DIR/VALIDATION_SCOPE.txt"
+          (cd "$CLEAN_DIR" && zip -q "$GITHUB_WORKSPACE/artifacts/$CLEAN_ZIP" ./*)
+          sha256sum "artifacts/$CLEAN_ZIP" | tee artifacts/CLEAN_ZIP_SHA256.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha57
+          name: SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha58
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
