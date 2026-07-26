@@ -14,7 +14,7 @@ grep -q 'ImportedReplayCompletionAnalyzer.process' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessForegroundService.java"
 grep -q 'ImportedReplayCompletionCore.evaluate' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ImportedReplayCompletionAnalyzer.java"
-grep -q "versionName '0.18.0-alpha58'" "$ROOT/app/build.gradle"
+grep -q "versionName '0.18.0-alpha59'" "$ROOT/app/build.gradle"
 grep -q 'startForegroundService' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
 grep -q 'PowerManager.PARTIAL_WAKE_LOCK' \
@@ -33,7 +33,7 @@ grep -q 'Z AZUL' "$VIEWER"
 grep -q 'VISOR CANVAS DIAGNÓSTICO' "$VIEWER"
 grep -q 'Double.isFinite(x)' "$VIEWER"
 if grep -Eq 'GLSurfaceView|android\.opengl|GLES20|EGLConfig|GL10' "$VIEWER"; then
-  echo 'ERROR: alpha58 must not depend on GLSurfaceView/OpenGL/EGL' >&2
+  echo 'ERROR: raw alpha59 viewer must not depend on GLSurfaceView/OpenGL/EGL' >&2
   exit 1
 fi
-echo 'imported replay completion v73 + alpha58 Canvas point cloud viewer PASS'
+echo 'imported replay completion v73 + alpha59 raw Canvas viewer PASS'
