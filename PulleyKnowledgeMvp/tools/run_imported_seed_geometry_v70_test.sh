@@ -20,8 +20,10 @@ if [ "$STATUS" -ne 0 ]; then
 fi
 
 grep -q 'ImportedSeedGeometryZipAnalyzer.process' \
-  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessForegroundService.java"
 grep -q 'ImportedSeedGeometryCore.solve' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ImportedSeedGeometryZipAnalyzer.java"
 grep -q "applicationId 'cl.skm.pulleyai.lab2'" "$ROOT/app/build.gradle"
-echo 'imported seed geometry v70 PASS'
+grep -q 'seedPointCount' \
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessForegroundService.java"
+echo 'imported seed geometry v70 + persisted cloud state PASS'

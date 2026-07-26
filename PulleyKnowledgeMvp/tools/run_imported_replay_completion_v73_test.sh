@@ -11,10 +11,17 @@ java -cp "$OUT" cl.skm.pulleyai.ImportedReplayCompletionCoreTest \
   2>&1 | tee artifacts/imported-replay-completion-v73.log
 
 grep -q 'ImportedReplayCompletionAnalyzer.process' \
-  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessForegroundService.java"
 grep -q 'ImportedReplayCompletionCore.evaluate' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ImportedReplayCompletionAnalyzer.java"
-grep -q "versionName '0.18.0-alpha54'" "$ROOT/app/build.gradle"
+grep -q "versionName '0.18.0-alpha55'" "$ROOT/app/build.gradle"
+grep -q 'startForegroundService' \
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
+grep -q 'PowerManager.PARTIAL_WAKE_LOCK' \
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessForegroundService.java"
+grep -q 'START_REDELIVER_INTENT' \
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessForegroundService.java"
+grep -q 'foregroundServiceType="dataSync"' "$ROOT/app/src/main/AndroidManifest.xml"
 grep -q 'PointCloudViewerActivity' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
-echo 'imported replay completion v73 + alpha54 viewer PASS'
+echo 'imported replay completion v73 + alpha55 persistent foreground replay PASS'

@@ -16,8 +16,8 @@ java -cp "$OUT" cl.skm.pulleyai.ImportedComponentGeometryCoreTest \
   2>&1 | tee artifacts/imported-component-geometry-v71.log
 
 grep -q 'ImportedComponentGeometryAnalyzer.process' \
-  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessForegroundService.java"
 grep -q 'ImportedComponentGeometryCore.analyze' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ImportedComponentGeometryAnalyzer.java"
 grep -q "applicationId 'cl.skm.pulleyai.lab2'" "$ROOT/app/build.gradle"
-echo 'imported component geometry v71 PASS'
+echo 'imported component geometry v71 + foreground ownership PASS'

@@ -10,8 +10,8 @@ android {
         applicationId 'cl.skm.pulleyai.lab2'
         minSdk 24
         targetSdk 35
-        versionCode 54
-        versionName '0.18.0-alpha54'
+        versionCode 55
+        versionName '0.18.0-alpha55'
     }
 
     signingConfigs {
@@ -42,11 +42,11 @@ android {
     }
 }
 
-// Alpha54 Lab2 adds an interactive non-metric seed point-cloud viewer and PLY/XYZ export.
+// Alpha55 moves ZIP replay into a lifecycle-independent foreground service with wake lock and persisted URI.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha54 Lab2')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha55 Lab2')
     }
     implementation files(cadcoreAar)
 }
