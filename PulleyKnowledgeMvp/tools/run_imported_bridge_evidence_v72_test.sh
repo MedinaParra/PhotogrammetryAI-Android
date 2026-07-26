@@ -17,8 +17,8 @@ java -cp "$OUT" cl.skm.pulleyai.ImportedBridgeEvidenceCoreTest \
   2>&1 | tee artifacts/imported-bridge-evidence-v72.log
 
 grep -q 'ImportedBridgeEvidenceAnalyzer.process' \
-  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessActivity.java"
+  "$ROOT/app/src/main/java/cl/skm/pulleyai/ZipReprocessForegroundService.java"
 grep -q 'ImportedBridgeEvidenceCore.analyze' \
   "$ROOT/app/src/main/java/cl/skm/pulleyai/ImportedBridgeEvidenceAnalyzer.java"
 grep -q "applicationId 'cl.skm.pulleyai.lab2'" "$ROOT/app/build.gradle"
-echo 'imported bridge evidence v72 PASS'
+echo 'imported bridge evidence v72 + foreground ownership PASS'
