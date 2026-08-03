@@ -1,0 +1,36 @@
+name: Validate engineering iteration history
+
+on:
+  pull_request:
+    paths:
+      - 'PulleyKnowledgeMvp/docs/**'
+      - 'PulleyKnowledgeMvp/tools/validate_iteration_history.py'
+      - '.github/workflows/validate-iteration-history.yml'
+  push:
+    branches:
+      - agent/photogrammetry-validation-alpha20
+      - product/single-device-photogrammetry-v1
+    paths:
+      - 'PulleyKnowledgeMvp/docs/**'
+      - 'PulleyKnowledgeMvp/tools/validate_iteration_history.py'
+      - '.github/workflows/validate-iteration-history.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate roadmap and iteration continuity
+        run: python3 PulleyKnowledgeMvp/tools/validate_iteration_history.py

@@ -6,12 +6,23 @@ on:
     branches:
       - agent/core-step-tracking-foundation
       - product/single-device-photogrammetry-v1
+      - agent/photogrammetry-validation-alpha20
     paths:
-      - 'PulleyKnowledgeMvp/**'
+      - 'PulleyKnowledgeMvp/app/**'
+      - 'PulleyKnowledgeMvp/tools/**'
+      - 'PulleyKnowledgeMvp/vision_training/**'
+      - 'PulleyKnowledgeMvp/ci/**'
+      - 'PulleyKnowledgeMvp/*.gradle'
+      - 'PulleyKnowledgeMvp/gradle.properties'
       - '.github/workflows/build-pulley-mvp-apk.yml'
   pull_request:
     paths:
-      - 'PulleyKnowledgeMvp/**'
+      - 'PulleyKnowledgeMvp/app/**'
+      - 'PulleyKnowledgeMvp/tools/**'
+      - 'PulleyKnowledgeMvp/vision_training/**'
+      - 'PulleyKnowledgeMvp/ci/**'
+      - 'PulleyKnowledgeMvp/*.gradle'
+      - 'PulleyKnowledgeMvp/gradle.properties'
       - '.github/workflows/build-pulley-mvp-apk.yml'
 
 permissions:
@@ -29,13 +40,24 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Prepare stable alpha lab signing
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/skm-alpha-signing" artifacts
+          KEYSTORE="$RUNNER_TEMP/skm-alpha-signing/skm-alpha-lab.jks"
+          base64 --decode PulleyKnowledgeMvp/ci/skm-alpha-lab.jks.b64 > "$KEYSTORE"
+          test "$(sha256sum "$KEYSTORE" | awk '{print $1}')" = "e0015f7a5e92d5e07cc5d2164405f1b841ce3670028828138e0280aa22426bf5"
+          chmod 600 "$KEYSTORE"
+          echo "SKM_ALPHA_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          printf 'SIGNING_MODE=PUBLIC_ALPHA_TEST_KEY\nSIGNING_KEYSTORE_SHA256=%s\nPRODUCTION_IDENTITY=false\n' \
+            "$(sha256sum "$KEYSTORE" | awk '{print $1}')" | tee artifacts/SIGNING_MODE.txt
       - name: Test capture core
         run: bash PulleyKnowledgeMvp/tools/run_capture_core_v26_tests.sh
       - name: Test scale and baseline core
         run: bash PulleyKnowledgeMvp/tools/run_reconstruction_core_v27_tests.sh
       - name: Test industrial landscape capture
         run: bash PulleyKnowledgeMvp/tools/run_industrial_capture_v28_tests.sh
-      - name: Test visual correspondences
+      - name: Test visual correspondences and spatial coverage
         run: bash PulleyKnowledgeMvp/tools/run_visual_correspondence_v29_test.sh
       - name: Test multiview graph
         run: bash PulleyKnowledgeMvp/tools/run_view_graph_v30_test.sh
@@ -67,6 +89,70 @@ jobs:
         run: sh PulleyKnowledgeMvp/tools/run_step_tessellation_policy_v44_test.sh
       - name: Test quantitative STEP overlay validation
         run: sh PulleyKnowledgeMvp/tools/run_cad_overlay_validation_v45_test.sh
+      - name: Test revisioned OT drawing evidence and radius gate
+        run: bash PulleyKnowledgeMvp/tools/run_revisioned_knowledge_v46_test.sh
+      - name: Test multivariable identification and cross-OT blocking
+        run: bash PulleyKnowledgeMvp/tools/run_identification_decision_v47_test.sh
+      - name: Test fail-closed photogrammetry safety gate
+        run: bash PulleyKnowledgeMvp/tools/run_photogrammetry_safety_v48_test.sh
+      - name: Test bounded local bundle adjustment and camera profiles
+        run: bash PulleyKnowledgeMvp/tools/run_local_bundle_adjustment_v49_test.sh
+      - name: Test runtime safety, BA acceptance and fallback
+        run: bash PulleyKnowledgeMvp/tools/run_runtime_reconstruction_v50_test.sh
+      - name: Test homography competition and visual degeneracy
+        run: bash PulleyKnowledgeMvp/tools/run_visual_degeneracy_v51_test.sh
+      - name: Test bounded robust pose graph refinement
+        run: bash PulleyKnowledgeMvp/tools/run_pose_graph_refinement_v52_test.sh
+      - name: Test professional engineering qualification gate
+        run: bash PulleyKnowledgeMvp/tools/run_engineering_qualification_v53_test.sh
+      - name: Test initial physical device campaign gate
+        run: bash PulleyKnowledgeMvp/tools/run_initial_device_campaign_v54_test.sh
+      - name: Test runtime BA window and automatic telemetry
+        run: bash PulleyKnowledgeMvp/tools/run_runtime_bundle_window_v55_test.sh
+      - name: Test runtime supplemental metrics and admitted BA gate
+        run: bash PulleyKnowledgeMvp/tools/run_runtime_supplemental_v56_test.sh
+      - name: Test runtime cancellation and automatic device diagnostics
+        run: bash PulleyKnowledgeMvp/tools/run_runtime_control_device_diagnostics_v57_test.sh
+      - name: Test deep cancellation transactional evidence and campaign manifest
+        run: bash PulleyKnowledgeMvp/tools/run_deep_cancellation_transaction_v58_test.sh
+      - name: Test bounded rotational BA and statistical residual intervals
+        run: bash PulleyKnowledgeMvp/tools/run_rotational_bundle_adjustment_v59_test.sh
+      - name: Test conditioned focal BA, observability and exact fallback
+        run: bash PulleyKnowledgeMvp/tools/run_conditioned_focal_bundle_adjustment_v60_test.sh
+      - name: Test fail-closed runtime generation export integrity
+        run: bash PulleyKnowledgeMvp/tools/run_runtime_generation_integrity_v60_test.sh
+      - name: Test deep geometry cancellation and recoverable publication journal
+        run: bash PulleyKnowledgeMvp/tools/run_geometry_cancellation_publication_journal_v61_test.sh
+      - name: Test local Ed25519 signature and automatic execution evidence
+        run: bash PulleyKnowledgeMvp/tools/run_local_evidence_signature_automatic_execution_v62_test.sh
+      - name: Test guided two-ring admission and incomplete-session blocking
+        run: bash PulleyKnowledgeMvp/tools/run_guided_capture_admission_v62_test.sh
+      - name: Test persistent pulley target lock and graph bridge remediation
+        run: bash PulleyKnowledgeMvp/tools/run_target_lock_bridge_remediation_v64_test.sh
+      - name: Test accessible session ZIP export
+        run: bash PulleyKnowledgeMvp/tools/run_accessible_session_export_v65_test.sh
+      - name: Test adaptive ZIP reprocessing and pair diagnostics
+        run: bash PulleyKnowledgeMvp/tools/run_zip_reprocessing_diagnostics_v66_test.sh
+      - name: Test multiscale oriented geometric reprocessing
+        run: bash PulleyKnowledgeMvp/tools/run_multiscale_geometric_reprocessing_v67_test.sh
+      - name: Test imported multiview track assembly
+        run: bash PulleyKnowledgeMvp/tools/run_imported_multiview_tracks_v68_test.sh
+      - name: Test canonical capture ZIP preflight and frame resolution
+        run: bash PulleyKnowledgeMvp/tools/run_capture_zip_preflight_v69_test.sh
+      - name: Test imported seed pose and bounded triangulation
+        run: bash PulleyKnowledgeMvp/tools/run_imported_seed_geometry_v70_test.sh
+      - name: Test component-aware geometry and bridge recommendation
+        run: bash PulleyKnowledgeMvp/tools/run_imported_component_geometry_v71_test.sh
+      - name: Test measured cross-component bridge evidence
+        run: bash PulleyKnowledgeMvp/tools/run_imported_bridge_evidence_v72_test.sh
+      - name: Test honest software replay roadmap completion
+        run: bash PulleyKnowledgeMvp/tools/run_imported_replay_completion_v73_test.sh
+      - name: Test Canvas viewer diagnostics and state restoration
+        run: bash PulleyKnowledgeMvp/tools/run_canvas_viewer_validation_v74_test.sh
+      - name: Test prior-constrained cylinder alignment and viewer
+        run: bash PulleyKnowledgeMvp/tools/run_prior_cylinder_alignment_v75_test.sh
+      - name: Test YOLO11n-seg MobileNet scene-awareness contract
+        run: bash PulleyKnowledgeMvp/tools/run_vision_ai_scene_awareness_v76_test.sh
       - name: Fetch verified pruned STEP-enabled cadcore v2 release
         run: |
           set -euo pipefail
@@ -74,34 +160,32 @@ jobs:
           TARGET=PulleyKnowledgeMvp/app/libs/freecad-android-cadcore-step-v2.aar
           RELEASE_URL="https://github.com/MedinaParra/FreeCAD-Native/releases/download/cadcore-step-v2/freecad-android-cadcore-step-v2.aar"
           EXPECTED="43c5b01b546253498aa679deba7b31ccf85380007f79dc270245a5e0cb8ddff8"
-          curl --fail --location --retry 4 --retry-delay 3 \
-            "$RELEASE_URL" --output "$TARGET"
+          curl --fail --location --retry 4 --retry-delay 3 "$RELEASE_URL" --output "$TARGET"
           ACTUAL=$(sha256sum "$TARGET" | awk '{print $1}')
           test "$ACTUAL" = "$EXPECTED"
-          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nNATIVE_LIBRARY_COUNT=25\n' \
-            "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
+          printf 'CADCORE_MODE=STEP_ENABLED\nCADCORE_SOURCE=release-cadcore-step-v2\nCADCORE_SHA256=%s\nSTEP_NATIVE_LIBRARY_COUNT=25\n' "$ACTUAL" | tee artifacts/CADCORE_RUNTIME.txt
+          printf 'VISION_RUNTIME=GOOGLE_PLAY_SERVICES_LITERT\nVISION_RUNTIME_VERSION=16.5.0\nTFLITE_CLIENT_LIBRARY=libtensorflowlite_jni_gms_client.so\nMODEL_WEIGHTS_BUNDLED=false\nCUSTOM_MODEL_PACKAGE_REQUIRED=true\n' | tee artifacts/VISION_RUNTIME.txt
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build STEP-enabled debug APK
+      - name: Build STEP-enabled alpha60 Lab2 APK
         run: |
           set -o pipefail
-          gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 \
-            | tee artifacts/gradle-build.log
-      - name: Upload Gradle diagnostic
+          gradle -p PulleyKnowledgeMvp :app:assembleDebug --stacktrace 2>&1 | tee artifacts/gradle-build.log
+      - name: Upload alpha60 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-alpha19-build-diagnostic
-          path: artifacts/gradle-build.log
+          name: SKM-Polea-AI-alpha60-build-diagnostic
+          path: artifacts/
           if-no-files-found: warn
           retention-days: 14
-      - name: Verify pruned native STEP runtime packaging
+      - name: Verify STEP closure and LiteRT client packaging
         run: |
           set -euo pipefail
           APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
-          CHECK="$RUNNER_TEMP/alpha19-apk"
+          CHECK="$RUNNER_TEMP/alpha60-apk"
           rm -rf "$CHECK" && mkdir -p "$CHECK"
           unzip -q "$APK" -d "$CHECK"
           test -f "$CHECK/lib/arm64-v8a/libfreecad_android_bridge.so"
@@ -110,30 +194,77 @@ jobs:
           test -f "$CHECK/lib/arm64-v8a/libTKBRep.so"
           test -f "$CHECK/lib/arm64-v8a/libTKMesh.so"
           test -f "$CHECK/lib/arm64-v8a/libc++_shared.so"
+          test -f "$CHECK/lib/arm64-v8a/libtensorflowlite_jni_gms_client.so"
           test -f "$CHECK/assets/occt/NATIVE_CLOSURE.json"
           test -d "$CHECK/assets/occt/XSTEPResource"
           test -d "$CHECK/assets/occt/SHMessage"
-          COUNT=$(find "$CHECK/lib/arm64-v8a" -maxdepth 1 -type f -name '*.so' | wc -l)
-          test "$COUNT" -eq 25
+          test -z "$(find "$CHECK/lib" -mindepth 1 -maxdepth 1 -type d ! -name 'arm64-v8a' -print -quit)"
+          find "$CHECK/lib/arm64-v8a" -maxdepth 1 -type f -name '*.so' -printf '%f\n' | sort | tee artifacts/APK_NATIVE_LIBRARIES.txt
+          TOTAL_COUNT=$(find "$CHECK/lib/arm64-v8a" -maxdepth 1 -type f -name '*.so' | wc -l)
+          test "$TOTAL_COUNT" -eq 26
           test ! -f "$CHECK/lib/arm64-v8a/libTKOpenGles.so"
           test ! -f "$CHECK/lib/arm64-v8a/libTKDEGLTF.so"
+          test -z "$(find "$CHECK" -type f -name '*.tflite' -print -quit)"
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest=json.loads(Path("${{ runner.temp }}/alpha19-apk/assets/occt/NATIVE_CLOSURE.json").read_text())
+          root=Path("${{ runner.temp }}/alpha60-apk")
+          manifest=json.loads((root / "assets/occt/NATIVE_CLOSURE.json").read_text())
           assert manifest["libraryCount"] == 24, manifest
-          assert any(item["name"] == "libTKDESTEP.so" for item in manifest["libraries"])
-          assert not any(item["name"] == "libTKOpenGles.so" for item in manifest["libraries"])
-          print("alpha19 OCCT closure verified:", manifest["libraryCount"], manifest["totalBytes"])
+          expected={item["name"] for item in manifest["libraries"]}
+          actual={path.name for path in (root / "lib/arm64-v8a").glob("*.so")}
+          assert expected <= actual, sorted(expected - actual)
+          assert "libfreecad_android_bridge.so" in actual
+          assert "libtensorflowlite_jni_gms_client.so" in actual
+          assert len(expected) + 1 == 25
+          extras=actual - expected - {"libfreecad_android_bridge.so"}
+          assert extras == {"libtensorflowlite_jni_gms_client.so"}, sorted(extras)
+          assert "libTKOpenGles.so" not in actual
+          print("alpha60 STEP closure verified: 24 OCCT + bridge = 25; LiteRT client = 1")
           PY
-      - name: Prepare artifact
+      - name: Verify stable alpha test signature
         run: |
-          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha19.apk
-          sha256sum artifacts/SKM-Polea-AI-CAD-STEP-v0.18.0-alpha19.apk | tee artifacts/SHA256SUMS.txt
+          set -euo pipefail
+          APK=PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk
+          keytool -printcert -jarfile "$APK" | tee artifacts/SIGNING_CERTIFICATE.txt
+          grep -q "SKM Polea AI Alpha Lab" artifacts/SIGNING_CERTIFICATE.txt
+      - name: Prepare artifact and clean validation ZIP
+        run: |
+          set -euo pipefail
+          APK_NAME=SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha60.apk
+          CLEAN_ZIP=SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha60-clean.zip
+          cp PulleyKnowledgeMvp/app/build/outputs/apk/debug/app-debug.apk "artifacts/$APK_NAME"
+          sha256sum "artifacts/$APK_NAME" | tee artifacts/SHA256SUMS.txt
+          CLEAN_DIR="$RUNNER_TEMP/alpha60-clean"
+          rm -rf "$CLEAN_DIR"
+          mkdir -p "$CLEAN_DIR"
+          cp "artifacts/$APK_NAME" artifacts/SHA256SUMS.txt \
+            artifacts/SIGNING_MODE.txt artifacts/SIGNING_CERTIFICATE.txt \
+            artifacts/CADCORE_RUNTIME.txt artifacts/VISION_RUNTIME.txt \
+            artifacts/APK_NATIVE_LIBRARIES.txt "$CLEAN_DIR/"
+          printf '%s\n' \
+            'VERSION=0.18.0-alpha60' \
+            'VERSION_CODE=60' \
+            'APPLICATION_ID=cl.skm.pulleyai.lab2' \
+            'ABI=arm64-v8a' \
+            'STEP_NATIVE_LIBRARY_COUNT=25' \
+            'LITERT_CLIENT_NATIVE_LIBRARY_COUNT=1' \
+            'RAW_CANVAS_VIEWER_GATE=PASS' \
+            'PRIOR_CYLINDER_ALIGNMENT_GATE=PASS' \
+            'VISION_AI_SCENE_AWARENESS_GATE=PASS' \
+            'VISION_MODELS=YOLO11N_SEG_INT8_512_AND_MOBILENETV3_SMALL_INT8_224' \
+            'VISION_MODEL_WEIGHTS=NOT_BUNDLED_CUSTOM_TRAINING_REQUIRED' \
+            'PHYSICAL_RAW_CANVAS_EVIDENCE=RECEIVED_FOR_ALPHA57' \
+            'VISION_RUNTIME_PHYSICAL_VALIDATION=PENDING' \
+            'CYLINDER_VIEWER_PHYSICAL_VALIDATION=PENDING' \
+            'METROLOGICAL_VALIDATION=NOT_CLAIMED' \
+            > "$CLEAN_DIR/VALIDATION_SCOPE.txt"
+          (cd "$CLEAN_DIR" && zip -q "$GITHUB_WORKSPACE/artifacts/$CLEAN_ZIP" ./*)
+          sha256sum "artifacts/$CLEAN_ZIP" | tee artifacts/CLEAN_ZIP_SHA256.txt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SKM-Polea-AI-CAD-STEP-v0.18.0-alpha19
+          name: SKM-Polea-AI-Lab2-CAD-STEP-v0.18.0-alpha60
           path: artifacts/
           if-no-files-found: error
           retention-days: 30

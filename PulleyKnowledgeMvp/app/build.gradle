@@ -7,11 +7,36 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'cl.skm.pulleyai'
+        applicationId 'cl.skm.pulleyai.lab2'
         minSdk 24
         targetSdk 35
-        versionCode 19
-        versionName '0.18.0-alpha19'
+        versionCode 60
+        versionName '0.18.0-alpha60'
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    signingConfigs {
+        alphaLab {
+            def keyPath = System.getenv('SKM_ALPHA_KEYSTORE_PATH')
+            if (keyPath != null && !keyPath.trim().isEmpty()) {
+                storeFile file(keyPath)
+                storePassword System.getenv('SKM_ALPHA_KEYSTORE_PASSWORD') ?: 'skm-alpha-test'
+                keyAlias System.getenv('SKM_ALPHA_KEY_ALIAS') ?: 'skm-alpha-lab'
+                keyPassword System.getenv('SKM_ALPHA_KEY_PASSWORD') ?: 'skm-alpha-test'
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            if (System.getenv('SKM_ALPHA_KEYSTORE_PATH')) {
+                signingConfig signingConfigs.alphaLab
+            }
+        }
     }
 
     compileOptions {
@@ -20,10 +45,13 @@ android {
     }
 }
 
+// Alpha60 preserves the 25-library STEP/OCCT closure. Google Play services supplies
+// the LiteRT engine and may package only a small client bridge, which is audited separately.
 dependencies {
     def cadcoreAar = file('libs/freecad-android-cadcore-step-v2.aar')
     if (!cadcoreAar.exists()) {
-        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha19')
+        throw new GradleException('Pruned STEP-enabled cadcore v2 AAR is required for alpha60 Lab2')
     }
     implementation files(cadcoreAar)
+    implementation 'com.google.android.gms:play-services-tflite-java:16.5.0'
 }

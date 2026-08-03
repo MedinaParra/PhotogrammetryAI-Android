@@ -2,35 +2,94 @@ import cl.skm.pulleyai.VisualFeatureCore;
 
 public final class VisualFeatureCoreV29Test {
     public static void main(String[] args) {
-        int width = 180;
-        int height = 120;
-        byte[] first = texture(width, height);
+        verifiesTranslatedTexture();
+        rejectsLocalizedOverlapAsGeometricallyWeak();
+        rejectsRepetitiveAmbiguityAsWeak();
+        System.out.println("VisualFeatureCoreV29Test OK");
+    }
+
+    private static void verifiesTranslatedTexture() {
+        int width = 240;
+        int height = 160;
+        byte[] first = texture(width, height, false);
         byte[] second = shift(first, width, height, 6, 4);
         VisualFeatureCore.FeatureSet a = VisualFeatureCore.detect(first, width, height, 350);
         VisualFeatureCore.FeatureSet b = VisualFeatureCore.detect(second, width, height, 350);
         VisualFeatureCore.PairResult result = VisualFeatureCore.match(a, b);
-        if (a.features.size() < 40 || b.features.size() < 40) {
+        if (a.features.size() < 60 || b.features.size() < 60) {
             throw new AssertionError("Insufficient features: " + a.features.size() + "/" + b.features.size());
         }
-        if (result.matches.size() < 12) {
-            throw new AssertionError("Insufficient matches: " + result.matches.size());
+        if (a.spatialCoverage < 0.45 || b.spatialCoverage < 0.45) {
+            throw new AssertionError("Feature distribution collapsed: "
+                    + a.spatialCoverage + "/" + b.spatialCoverage);
+        }
+        if (result.matches.size() < 18 || result.spatialCoverage < 0.25) {
+            throw new AssertionError("Insufficient distributed matches: "
+                    + result.matches.size() + " coverage=" + result.spatialCoverage);
         }
         if (Math.abs(result.medianDx - 6.0) > 1.5 || Math.abs(result.medianDy - 4.0) > 1.5) {
             throw new AssertionError("Wrong translation: " + result.medianDx + "," + result.medianDy);
         }
-        System.out.println("VisualFeatureCoreV29Test OK features=" + a.features.size()
-                + " matches=" + result.matches.size() + " shift=" + result.medianDx + "," + result.medianDy);
+        if ("WEAK".equals(result.status)) {
+            throw new AssertionError("Coherent translated texture should be usable: ratio="
+                    + result.translationCoherenceRatio);
+        }
     }
 
-    private static byte[] texture(int width, int height) {
+    private static void rejectsLocalizedOverlapAsGeometricallyWeak() {
+        int width = 240;
+        int height = 160;
+        byte[] first = texture(width, height, true);
+        byte[] second = shift(first, width, height, 5, 3);
+        VisualFeatureCore.FeatureSet a = VisualFeatureCore.detect(first, width, height, 350);
+        VisualFeatureCore.FeatureSet b = VisualFeatureCore.detect(second, width, height, 350);
+        VisualFeatureCore.PairResult result = VisualFeatureCore.match(a, b);
+        if (!"WEAK".equals(result.status)) {
+            throw new AssertionError("Localized overlap must not be promoted: "
+                    + result.status + " coverage=" + result.spatialCoverage);
+        }
+    }
+
+    private static void rejectsRepetitiveAmbiguityAsWeak() {
+        int width = 240;
+        int height = 160;
+        byte[] first = repetitiveTexture(width, height);
+        byte[] second = shift(first, width, height, 7, 5);
+        VisualFeatureCore.PairResult result = VisualFeatureCore.match(
+                VisualFeatureCore.detect(first, width, height, 420),
+                VisualFeatureCore.detect(second, width, height, 420));
+        if (!"WEAK".equals(result.status)) {
+            throw new AssertionError("Ambiguous repetitive matches must remain weak: "
+                    + result.status + " coherence=" + result.translationCoherenceRatio);
+        }
+    }
+
+    private static byte[] texture(int width, int height, boolean localized) {
         byte[] data = new byte[width * height];
         long state = 17L;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                boolean active = !localized || (x < width / 3 && y < height / 2);
+                state = state * 1103515245L + 12345L;
+                int noise = active ? (int) ((state >>> 18) & 63) : 0;
+                int grid = active ? ((((x / 13 + y / 11) & 1) == 0) ? 65 : 185) : 128;
+                int circle = active && ((x - 70) * (x - 70) + (y - 55) * (y - 55) < 27 * 27) ? 45 : 0;
+                data[y * width + x] = (byte) Math.max(0, Math.min(255, grid + noise - circle));
+            }
+        }
+        return data;
+    }
+
+    private static byte[] repetitiveTexture(int width, int height) {
+        byte[] data = new byte[width * height];
+        long state = 91L;
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 state = state * 1103515245L + 12345L;
                 int noise = (int) ((state >>> 18) & 63);
                 int grid = ((x / 13 + y / 11) & 1) == 0 ? 65 : 185;
-                int circle = ((x - 70) * (x - 70) + (y - 55) * (y - 55) < 27 * 27) ? 45 : 0;
+                int circle = ((x - width / 3) * (x - width / 3)
+                        + (y - height / 2) * (y - height / 2) < 27 * 27) ? 45 : 0;
                 data[y * width + x] = (byte) Math.max(0, Math.min(255, grid + noise - circle));
             }
         }
