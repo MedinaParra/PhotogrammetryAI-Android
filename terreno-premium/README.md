@@ -1,5 +1,19 @@
 # Terreno — paquete saneado de fuente funcional + propuesta premium
 
+## Integración en este repositorio
+
+La fuente saneada se incorporó desde el commit `b30abbd9636d18abcc5b109b99ba5b73aca97f5e`; sus 44 entradas de manifiesto se verificaron antes de editar. `SOURCE-MANIFEST.json` y `TRANSFER-TEST-NOTES.json` conservan la evidencia del paquete recibido, no describen los hashes ni resultados de cambios posteriores.
+
+La integración añade la allowlist nativa de renderer, Three, CSS y fuente local con MIME y CSP restrictivos; pruebas de assets transitivos; harnesses con sandbox explícito; y CI de navegador previo al job Android. `npm ci`, `npm test` y `npm run build` verifican la copia actual. El preview escucha solo en loopback. Playwright es dependencia de desarrollo fijada con lockfile; la aplicación sigue cargando bibliotecas locales sin CDN.
+
+`npm run build:apk` requiere SDK Android 35/build-tools 35.0.0 y compilador JDK 17+, y produce únicamente `output/Terreno-premium-unsigned.apk`, su hash y manifiesto. No crea ni usa claves. El paquete conserva la identidad y versión del snapshot recibido; no se presenta como nueva versión instalable ni como actualización compatible hasta verificar el APK estable, ajustar la versión bajo coordinación y firmar en custodia privada.
+
+El workflow público ejecuta pruebas y capturas sintéticas con Chromium sandbox activo y Mesa/Xvfb; si fallan, el job Android queda bloqueado. Sus resultados reales, no la existencia del workflow, determinan qué está validado. Las capturas de Chromium no acreditan Android, Samsung ni aprobación estética del usuario. No se ha migrado firma ni modificado su repositorio custodio.
+
+---
+
+## Notas originales del paquete recibido
+
 **Estado verificado al 25 de octubre de 2026.** Este paquete fuente no es una APK, no acredita instalación Android y no incluye una propuesta visual aprobada por el usuario. Destino de trabajo indicado por el usuario: **PhotogrammetryAI-Android**, utilizado como almacenamiento; el contenido anterior no es la base funcional. Confirmar visibilidad/autorización antes de publicar: entregar este ZIP privado no autoriza un push público.
 
 ## Qué contiene y qué conserva

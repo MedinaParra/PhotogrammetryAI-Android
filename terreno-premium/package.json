@@ -4,12 +4,15 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "node core-test.mjs && node integration-test.mjs && node viewer-test.mjs && node templates-test.mjs && node photo-analysis-test.mjs && node structure-analysis-test.mjs && node command-controller-test.mjs && node step-export-test.mjs && node premium-test.mjs",
+    "test": "node core-test.mjs && node integration-test.mjs && node viewer-test.mjs && node templates-test.mjs && node photo-analysis-test.mjs && node structure-analysis-test.mjs && node command-controller-test.mjs && node step-export-test.mjs && node premium-test.mjs && node native-assets-test.mjs",
     "test:step": "node step-export-test.mjs",
     "build": "node scripts/build.mjs",
-    "preview": "python3 -m http.server 8080 --directory dist",
-    "build:apk": "bash scripts/build-apk.sh",
+    "preview": "python3 -m http.server 8080 --bind 127.0.0.1 --directory dist",
+    "build:apk": "bash scripts/build-apk.sh --unsigned",
     "test:browser": "node scripts/browser-qa.mjs",
     "test:visual-premium": "node scripts/premium-qa.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
   }
 }

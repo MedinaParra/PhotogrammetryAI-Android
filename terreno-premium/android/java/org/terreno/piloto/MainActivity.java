@@ -100,7 +100,7 @@ public final class MainActivity extends Activity {
         web.addJavascriptInterface(new ExportBridge(), "TerrenoAndroid");
         web.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                return localAsset(request.getUrl());
+                return "GET".equals(request.getMethod()) ? localAsset(request.getUrl()) : blocked();
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
@@ -130,20 +130,22 @@ public final class MainActivity extends Activity {
         switch (name) {
             case "index.html": mime="text/html"; break;
             case "app.js": case "core.js": case "viewer.js": case "compat.js":
+            case "premium-viewer.js": case "vendor/three/three.module.js": case "vendor/three/three.core.js":
             case "photo-analysis.js": case "structure-analysis.js": case "templates.js": case "command-controller.js": case "step-export.js":
                 mime="text/javascript"; break;
-            case "style.css": mime="text/css"; break;
+            case "style.css": case "premium.css": mime="text/css"; break;
+            case "vendor/inter/InterVariable.woff2": mime="font/woff2"; break;
             default: return blocked();
         }
         if (!"https".equals(uri.getScheme()) || !"appassets.androidplatform.net".equals(uri.getAuthority()) ||
-                !("/assets/"+name).equals(uri.getPath())) return blocked();
+                !("/assets/"+name).equals(uri.getEncodedPath()) || uri.getQuery() != null || uri.getFragment() != null) return blocked();
         try {
             InputStream bytes = getAssets().open(name);
             Map<String,String> headers = new HashMap<>();
-            headers.put("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
+            headers.put("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; worker-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
             headers.put("X-Content-Type-Options", "nosniff");
             headers.put("Cache-Control", "no-store");
-            return new WebResourceResponse(mime, "UTF-8", 200, "OK", headers, bytes);
+            return new WebResourceResponse(mime, "font/woff2".equals(mime) ? null : "UTF-8", 200, "OK", headers, bytes);
         } catch (Exception e) { return blocked(); }
     }
     private WebResourceResponse blocked() {

@@ -1,0 +1,79 @@
+name: Terreno premium verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [terreno/premium-integration]
+    paths: ['terreno-premium/**', '.github/workflows/terreno-premium.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terreno-premium-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: terreno-premium
+
+jobs:
+  web:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: terreno-premium/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run build
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: sudo apt-get install -y xvfb libgl1-mesa-dri libegl-mesa0 mesa-utils
+      - name: Sandboxed premium render and touch checks
+        run: xvfb-run -a -s '-screen 0 1280x720x24' npm run test:visual-premium
+        env:
+          PREMIUM_QA_HEADED: '1'
+          PREMIUM_QA_OUTPUT: artifacts/premium-qa
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        if: always()
+        with:
+          name: premium-browser-${{ github.sha }}
+          path: terreno-premium/artifacts/premium-qa/
+          retention-days: 7
+          if-no-files-found: warn
+
+  unsigned-android:
+    needs: web
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install official Android platform and build tools
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build unsigned APK without signing credentials
+        run: bash scripts/build-apk.sh --unsigned
+      - name: Record reviewed source commit
+        run: git rev-parse HEAD > output/source-commit.txt
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: unsigned-apk-${{ github.sha }}
+          path: terreno-premium/output/
+          retention-days: 7
+          if-no-files-found: error

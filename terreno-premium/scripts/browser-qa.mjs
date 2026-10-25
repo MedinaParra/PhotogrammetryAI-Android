@@ -5,9 +5,9 @@
  * The Playwright test dependency is not included in the APK. No remote assets or server are used.
  */
 import assert from 'node:assert/strict';
-import { readFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, rm, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, resolve, extname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -17,12 +17,16 @@ const moduleSpecifier = isAbsolute(playwrightModule) || playwrightModule.startsW
 let chromium, csp;
 const origin = 'https://appassets.androidplatform.net';
 const home = `${origin}/assets/index.html`;
-const assets = new Map([
-  ['index.html', 'text/html'], ['app.js', 'text/javascript'], ['core.js', 'text/javascript'],
-  ['viewer.js', 'text/javascript'], ['compat.js', 'text/javascript'], ['style.css', 'text/css'],
-  ['photo-analysis.js', 'text/javascript'], ['structure-analysis.js', 'text/javascript'], ['templates.js', 'text/javascript'],
-  ['command-controller.js', 'text/javascript'],
-]);
+const assets = new Map();
+const mime = {'.js':'text/javascript', '.css':'text/css', '.html':'text/html', '.woff2':'font/woff2', '.svg':'image/svg+xml', '.txt':'text/plain'};
+async function indexAssets(directory, prefix='') {
+  for (const entry of await readdir(directory, {withFileTypes:true})) {
+    const name = prefix + entry.name;
+    if (entry.isDirectory()) await indexAssets(join(directory, entry.name), name + '/');
+    else if (entry.isFile()) assets.set(name, mime[extname(name)] || 'application/octet-stream');
+  }
+}
+await indexAssets(join(root, 'dist'));
 const work = process.env.QA_OUTPUT_DIR ? resolve(process.env.QA_OUTPUT_DIR) : await mkdtemp(join(tmpdir(), 'terreno-browser-qa-'));
 await mkdir(work, {recursive:true});
 // Keep Chromium profile out of uploaded screenshots/reports; this run uses synthetic data only.
@@ -38,22 +42,23 @@ let dialogAnswers = [];
 
 async function launch() {
   context = await chromium.launchPersistentContext(profile, {
-    ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), headless: true,
+    ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), headless: process.env.BROWSER_QA_HEADED !== '1', chromiumSandbox: true,
+    ignoreDefaultArgs: ['--enable-unsafe-swiftshader', '--unsafely-disable-devtools-self-xss-warnings', '--disable-ipc-flooding-protection'],
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 1,
     isMobile: true, hasTouch: true, serviceWorkers: 'block',
-    args: ['--disable-dev-shm-usage', '--disable-background-networking'],
+    args: ['--disable-dev-shm-usage', '--disable-background-networking', ...(process.env.BROWSER_QA_HEADED === '1' ? ['--use-gl=angle', '--use-angle=gl'] : [])],
   });
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
     const name = url.pathname.replace(/^\/assets\//, '');
     if (url.origin === origin && url.pathname === `/assets/${name}` && assets.has(name)) {
-      let body = await readFile(join(root, 'dist', name), 'utf8');
+      let body = await readFile(join(root, 'dist', name));
       if (name === 'app.js') {
         // QA ONLY: append a read-only observer to this intercepted HTTP response.
         // It copies camera state, exposes no mutator, and never changes shipped files.
-        body += `\nObject.defineProperty(window, '__terrenoQaReadView', {value: () => ({...viewer.getCameraState(), mode:viewer.mode, selectedId:viewer.selectedId, pointerCount:viewer.pointers.size}), writable:false, configurable:false});\n`;
+        body = body.toString('utf8') + `\nObject.defineProperty(window, '__terrenoQaReadView', {value: () => ({...viewer.getCameraState(), mode:viewer.mode, selectedId:viewer.selectedId, pointerCount:viewer.pointers.size}), writable:false, configurable:false});\n`;
       }
-      return route.fulfill({ status: 200, contentType: `${assets.get(name)}; charset=UTF-8`,
+      return route.fulfill({ status: 200, contentType: assets.get(name),
         headers: { 'Content-Security-Policy': csp, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' },
         body });
     }
@@ -213,6 +218,7 @@ try {
   csp = nativeSource.match(/headers\.put\("Content-Security-Policy", "([^"]+)"\)/)?.[1];
   assert(csp, 'Read the exact CSP from MainActivity');
   report.browser = 'Playwright Chromium';
+  report.sandbox = true;
   await launch();
   report.browserVersion = context.browser()?.version() || 'persistent Chromium';
   await step('Secure local asset origin, synthetic example, real IndexedDB, no page errors', async () => {
@@ -700,6 +706,7 @@ try {
   assert.deepEqual(report.errors, [], 'No uncaught page errors');
   const external = report.blockedRequests.filter(url => new URL(url).origin !== origin);
   assert.deepEqual(external, [], 'The app must not request remote assets or upload photos');
+  assert.deepEqual(report.blockedRequests, [], 'All bundled assets must load from the approved origin');
   report.status = 'passed';
 } catch (error) {
   report.status = 'failed'; report.failure = error.stack || String(error);
