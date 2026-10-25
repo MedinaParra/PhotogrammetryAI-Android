@@ -36,11 +36,21 @@ function visit(name){
   }
 }
 visit('index.html');
+// Worker constructors may be assembled dynamically; explicitly traverse the local
+// worker entry point and its imports; missing worker bytes must fail packaging.
+visit('photo-worker.js');
+const workerSource=fs.readFileSync(path.join(root,'dist','photo-worker.js'),'utf8');
+for(const dependency of ['./structure-analysis.js','./photo-analysis.js']) {
+  assert(workerSource.includes(`from '${dependency}'`) || workerSource.includes(`from "${dependency}"`),
+    `Worker analysis dependency missing: ${dependency}`);
+}
 for(const asset of allowed.keys()) assert(fs.existsSync(path.join(root,'dist',asset)),`Stale allowlist: ${asset}`);
 assert(seen.has('premium-viewer.js'));
 assert(seen.has('vendor/three/three.core.js'));
 assert(seen.has('vendor/inter/InterVariable.woff2'));
 assert(policy.includes("font-src 'self'"));
+assert(policy.includes("worker-src 'self';"));
+assert.equal(allowed.get('photo-worker.js'),'text/javascript');
 assert(policy.includes("connect-src 'none'"));
 assert(policy.includes('getEncodedPath()'));
 assert(policy.includes('uri.getQuery() != null'));

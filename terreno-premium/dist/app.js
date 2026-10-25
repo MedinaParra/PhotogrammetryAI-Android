@@ -1,8 +1,6 @@
 import {createProject,exampleProject,validateProject,parseProject,serializeProject,lengthOf,parseMeasure,toUnit,loadProjects,saveProject,storageInfo,LIMITS} from './core.js';
 import {StructureViewer} from './premium-viewer.js';
-import {analyzeSectionPixels} from './photo-analysis.js';
 import {createTemplateProject,createSupportTemplate} from './templates.js';
-import {analyzeStructurePixels} from './structure-analysis.js';
 import {createCommandController} from './command-controller.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -18,8 +16,8 @@ const viewer=new StructureViewer($('#canvas'),{onSelect:id=>{selectedId=id;rende
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),4200);}
 function error(e){$('#errorBanner').textContent=e.message||String(e);$('#errorBanner').hidden=false;$('#saveState').textContent='Revisar guardado';}
 function clearError(){$('#errorBanner').hidden=true;}
-function showModal(title,html,eyebrow='TERRENO'){closeSceneMenu();hideInspector();showAzimuth(false);dirty=false;$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML=html;if(!modal.open)modal.showModal();modal.scrollTop=0;}
-function closeModal(force=false){if(!force&&(busy||processingPhoto)){toast('Espera a que termine el guardado o la foto.');return;}if(!force&&dirty&&!confirm('Hay cambios en el formulario sin guardar. ¿Descartarlos?'))return;dirty=false;sectionDraft=null;sectionCaptureProject=null;sectionCaptureToken++;resetCommandContext();modal.close();}
+function showModal(title,html,eyebrow='TERRENO'){if(photoAnalysisJob)cancelPhotoAnalysis(false);closeSceneMenu();hideInspector();showAzimuth(false);dirty=false;$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML=html;if(!modal.open)modal.showModal();modal.scrollTop=0;}
+function closeModal(force=false){if(photoAnalysisJob){cancelPhotoAnalysis(false);force=true;}if(!force&&(busy||processingPhoto)){toast('Espera a que termine el guardado o la foto.');return;}if(!force&&dirty&&!confirm('Hay cambios en el formulario sin guardar. ¿Descartarlos?'))return;dirty=false;sectionDraft=null;sectionCaptureProject=null;sectionCaptureToken++;resetCommandContext();modal.close();}
 $('#closeModal').onclick=()=>closeModal();modal.addEventListener('cancel',e=>{e.preventDefault();closeModal();});modal.addEventListener('input',e=>{if(e.target.closest('#memberForm,#projectForm,#templateForm,#sectionCropForm'))dirty=true;});
 window.addEventListener('beforeunload',e=>{if(dirty||busy||processingPhoto){e.preventDefault();e.returnValue='';}});
 async function commit(next,{undo=true}={}){if(busy)throw Error('Hay un guardado en curso. Espera a que termine.');busy=true;$('#saveState').textContent='Guardando…';try{validateProject(next);const result=await saveProject(next,project?.id===next.id?project.updatedAt:undefined);next.updatedAt=result.savedAt;if(undo&&project?.id===next.id){history.push(project);while(history.length>1&&(history.length>20||history.reduce((n,p)=>n+sizeOf(p),0)>40*1024*1024))history.shift();}project=next;persisted=true;try{localStorage.setItem('terreno-active-project',project.id);}catch{}projects=projects.filter(p=>p.id!==next.id);projects.unshift(copy(next));clearError();render();return true;}catch(e){error(e);throw e;}finally{busy=false;$('#undoBtn').disabled=!history.length;}}
@@ -47,7 +45,7 @@ async function pickProject(){if(busy||processingPhoto){toast('Espera a que termi
 function backup(){const count=project.members.reduce((n,m)=>n+m.photos.length,0);showModal('Respaldo y traslado',`<h3>Exportar este proyecto</h3><p><strong>${esc(project.name)}</strong><br>${project.members.length} piezas · ${project.nodes.length} nodos · ${count} fotos</p><label class="checkrow"><input type="checkbox" id="includePhotos" checked><span>Incluir fotos en el JSON. El archivo contiene imágenes privadas; guárdalo donde corresponda.</span></label><button id="doExport" class="button primary wide">⇩ Descargar respaldo JSON</button><div class="infobox warning">Guardar localmente no es un respaldo. Desinstalar Terreno, borrar sus datos o perder el equipo puede eliminar proyectos. Exporta al terminar cada jornada.</div><h3>Importar un respaldo</h3><p>Se valida antes de guardar. La importación crea una copia independiente: nunca reemplaza tu proyecto actual.</p><button id="doImport" class="button outline wide">↑ Seleccionar archivo JSON</button><details style="margin-top:15px"><summary>Pegar JSON como alternativa</summary><div class="field" style="margin-top:12px"><label for="jsonPaste">Contenido del respaldo</label><textarea id="jsonPaste" placeholder="Pega aquí un respaldo de Terreno"></textarea></div><button id="pasteImport" class="button outline">Validar e importar texto</button></details><div id="importError" class="formerror" hidden role="alert"></div><p class="microcopy">Fotos: JPEG comprimido a un máximo de 1600 px, sin ubicación EXIF; 12 por pieza, hasta 120 por proyecto. El JSON sin fotos no permite recuperarlas.</p><p class="microcopy">Almacenamiento: ${esc(storageInfo().mode)}. ${esc(storageInfo().warning)}</p>`);$('#doExport').onclick=()=>exportProject($('#includePhotos').checked);$('#doImport').onclick=()=>$('#importFile').click();$('#pasteImport').onclick=()=>importText($('#jsonPaste').value);}
 function exportProject(withPhotos=true){try{const json=serializeProject(project,withPhotos),filename=`terreno-${project.name.replace(/[^\p{L}\p{N}-]/gu,'_').slice(0,70)}-${new Date().toISOString().slice(0,10)}${withPhotos?'':'-sin-fotos'}.json`;if(window.TerrenoAndroid?.exportJson){window.TerrenoAndroid.exportJson(filename,json);toast('Elige dónde guardar el respaldo JSON. Todavía no está guardado.');return;}const blob=new Blob([json],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);toast(`Descarga iniciada ${withPhotos?'con fotos':'sin fotos'}. Verifica el archivo en Descargas.`);}catch(e){error(e);}}
 window.terrenoNativeExportResult=(success,message)=>{if(success)clearError();toast(message);};
-window.terrenoHandleBack=()=>{if(busy||processingPhoto){toast('Espera a que termine el guardado o la foto.');return true;}if(modal.open){closeModal();return true;}if(!$('#azimuthPanel').hidden){showAzimuth(false);return true;}if(!$('#sceneMenu').hidden){closeSceneMenu();return true;}if(document.body.classList.contains('inspector-open')){hideInspector();return true;}if(fieldMode){setFieldMode(false);return true;}return false;};
+window.terrenoHandleBack=()=>{if(photoAnalysisJob){closeModal();return true;}if(busy||processingPhoto){toast('Espera a que termine el guardado o la foto.');return true;}if(modal.open){closeModal();return true;}if(!$('#azimuthPanel').hidden){showAzimuth(false);return true;}if(!$('#sceneMenu').hidden){closeSceneMenu();return true;}if(document.body.classList.contains('inspector-open')){hideInspector();return true;}if(fieldMode){setFieldMode(false);return true;}return false;};
 async function importText(text){if(busy||processingPhoto){toast('Espera a que termine el guardado o la foto.');return;}try{const p=parseProject(text);if(!confirm(`Importar una copia de «${p.name}» con ${p.members.length} piezas y ${p.members.reduce((n,m)=>n+m.photos.length,0)} fotos?`))return;p.id=uid('p');p.name=`${p.name.slice(0,160)} · importado`;p.createdAt=new Date().toISOString();await commit(p,{undo:false});history=[];selectedId=null;render();viewer.fit();closeModal(true);toast('Respaldo validado e importado como copia.');}catch(e){if($('#importError')){$('#importError').hidden=false;$('#importError').textContent=e.message;}else error(e);}}
 $('#importFile').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;if(file.size>LIMITS.jsonChars){error(Error('El archivo supera 40 MB.'));return;}await importText(await file.text());};
 function requestPhoto(input){if(busy||processingPhoto){toast('Espera a que termine el guardado o la foto.');return;}const m=getMember();if(!m)return;if(m.photos.length>=12){toast('Límite de 12 fotos por pieza.');return;}photoTarget={projectId:project.id,memberId:m.id};$(`#${input}`).click();}
@@ -58,7 +56,8 @@ function help(){showModal('Para trabajar en terreno',`<div class="infobox warnin
 function instrument(){showModal('Instrumento de medición',`<span class="status estimated">V1 · entrada manual</span><h3>Hoy: mide y registra</h3><p>Lee la medida en tu instrumento, selecciona la unidad correcta e ingrésala en la ficha. El menú de Terreno se controla con la pantalla táctil.</p><h3>NeoRulerGO: integración por verificar</h3><p>La rueda permite recorrer menús internos del equipo. La transmisión Bluetooth de longitudes está documentada, pero esta versión no se conecta por Bluetooth, no recibe medidas ni usa el giro o los botones del instrumento para navegar.</p><div class="infobox">Una integración futura debe validar el protocolo, las unidades y los eventos disponibles con el equipo real. No se asume que la rueda exponga control remoto.</div><p>La precisión indicada por el fabricante es ±(1 mm + 0,5 % de D). Registra método e incertidumbre; una cifra con decimales no garantiza precisión milimétrica en terreno.</p><p class="microcopy">Referencia: <a target="_blank" rel="noopener noreferrer" href="https://hozodesign.com/products/neorulergo">HOZO NeoRulerGO ↗</a> · <a target="_blank" rel="noopener noreferrer" href="https://imagemeter.de/manual/bluetooth/devices/">Dispositivos ImageMeter ↗</a></p>`);}
 
 // Local photo analysis offers limited experimental 2D geometry, never automatic scene reconstruction.
-let sectionCaptureProject=null,sectionCaptureToken=0,photoAnalysisKind='structure';
+let sectionCaptureProject=null,sectionCaptureToken=0,photoAnalysisKind='structure',photoAnalysisJob=null,photoAnalysisSequence=0;
+const PHOTO_ANALYSIS_TIMEOUT_MS=15000;
 function startSectionPhoto(){
   if(busy||processingPhoto){toast('Espera a que termine el guardado o la foto.');return;}
   sectionDraft=null;sectionCaptureProject=project.id;sectionCaptureToken++;
@@ -78,8 +77,8 @@ async function receiveSectionPhoto(event){
     const scale=Math.min(1,1600/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
     const dataUrl=canvas.toDataURL('image/jpeg',.8);if(dataUrl.length>LIMITS.photoChars)throw Error('La foto comprimida sigue siendo demasiado grande; usa un recorte más pequeño.');
     sectionDraft={projectId:expected,kind:photoAnalysisKind,image:canvas,photo:{id:uid('foto'),name:file.name.slice(0,230)||'Sección de terreno',dataUrl,createdAt:new Date().toISOString()},result:null,crop:null};
-    showSectionCrop();
-  }catch(err){if($('#sectionError')){$('#sectionError').textContent=err.message;$('#sectionError').hidden=false;}else toast(err.message);}finally{processingPhoto=false;}
+    showSectionCrop();processingPhoto=false;analyzeSectionCrop({automatic:true});
+  }catch(err){if($('#sectionError')){$('#sectionError').textContent=err.message;$('#sectionError').hidden=false;}else toast(err.message);}finally{if(!photoAnalysisJob)processingPhoto=false;}
 }
 function sectionCrop(){
   const raw=['cropX','cropY','cropW','cropH'].map(id=>$('#'+id).value.trim());if(raw.some(v=>v===''))throw Error('Completa las cuatro coordenadas del recorte.');const values=raw.map(Number);
@@ -87,8 +86,8 @@ function sectionCrop(){
   return {x:values[0],y:values[1],width:values[2],height:values[3]};
 }
 function showSectionCrop(){
-  const structural=sectionDraft.kind!=='section';
-  showModal(structural?'Encuadra el marco visible':'Recorta una sección visible',`<div class="section-step">2 · Encuadre y análisis local</div>${structural?'<p>Encuadra un <strong>bastidor o pórtico casi frontal</strong>, completo y con margen. Se analizan líneas del recorte para proponer puntos y tramos 2D; el fondo debe ser simple y contrastante. Puedes obtener «no identificable».</p>':'<p>Encuadra <strong>solo una sección transversal</strong>, completa, con un margen de fondo uniforme. No recortes una estructura entera en este modo.</p>'}<p class="microcopy">El rectángulo verde indica lo que se analizará.</p><canvas id="sectionPreview" class="section-preview" aria-label="Vista de la foto y recorte marcado en verde"></canvas><form id="sectionCropForm"><div class="crop-grid">${input('cropX','Desde izquierda (%)',0,'type="number" min="0" max="95" step="1" inputmode="decimal"')}${input('cropY','Desde arriba (%)',0,'type="number" min="0" max="95" step="1" inputmode="decimal"')}${input('cropW','Ancho del recorte (%)',100,'type="number" min="5" max="100" step="1" inputmode="decimal"')}${input('cropH','Alto del recorte (%)',100,'type="number" min="5" max="100" step="1" inputmode="decimal"')}</div><label class="checkrow"><input type="checkbox" id="sectionConsent"><span>${structural?'Confirmo que se ve un marco o pórtico casi frontal, completo y con fondo contrastante; revisaré todos los puntos y tramos propuestos.':'Confirmo que el recorte muestra una sección transversal aislada de frente, completa y con fondo contrastante.'}</span></label><div id="sectionError" class="formerror" hidden role="alert"></div><button id="analyzeSection" class="button primary wide" type="submit">Analizar forma del recorte</button></form><div id="sectionCandidates" aria-live="polite"></div><p class="microcopy">La comparación geométrica puede fallar por sombras, pintura, óxido, perspectiva o fondos complejos. No es IA de catálogo ni identifica medidas, material, resistencia o seguridad.</p>`,structural?'FOTO · GRAFO 2D EXPERIMENTAL':'FOTO · SECCIÓN AISLADA');
+  const structural=sectionDraft.kind!=='section',crop=sectionDraft.crop||{x:0,y:0,width:100,height:100};
+  showModal(structural?'Encuadra el marco visible':'Recorta una sección visible',`<div id="photoAnalysisState" class="photo-analysis-state" aria-live="polite" data-state="ready"></div><details id="photoCropControls"><summary>Ajustar encuadre · opcional</summary><div class="section-step">Encuadre manual</div>${structural?'<p>Encuadra un <strong>bastidor o pórtico casi frontal</strong>, completo y con margen. Se analizan líneas del recorte para proponer puntos y tramos 2D; el fondo debe ser simple y contrastante. Puedes obtener «no identificable».</p>':'<p>Encuadra <strong>solo una sección transversal</strong>, completa, con un margen de fondo uniforme. No recortes una estructura entera en este modo.</p>'}<p class="microcopy">El rectángulo verde indica lo que se analizará.</p><canvas id="sectionPreview" class="section-preview" aria-label="Vista de la foto y recorte marcado en verde"></canvas><form id="sectionCropForm"><div class="crop-grid">${input('cropX','Desde izquierda (%)',crop.x,'type="number" min="0" max="95" step="1" inputmode="decimal"')}${input('cropY','Desde arriba (%)',crop.y,'type="number" min="0" max="95" step="1" inputmode="decimal"')}${input('cropW','Ancho del recorte (%)',crop.width,'type="number" min="5" max="100" step="1" inputmode="decimal"')}${input('cropH','Alto del recorte (%)',crop.height,'type="number" min="5" max="100" step="1" inputmode="decimal"')}</div><label class="checkrow"><input type="checkbox" id="sectionConsent"><span>${structural?'Confirmo que se ve un marco o pórtico casi frontal, completo y con fondo contrastante; revisaré todos los puntos y tramos propuestos.':'Confirmo que el recorte muestra una sección transversal aislada de frente, completa y con fondo contrastante.'}</span></label><div id="sectionError" class="formerror" hidden role="alert"></div><button id="analyzeSection" class="button primary wide" type="submit">Analizar forma del recorte</button></form></details><div id="sectionCandidates" aria-live="polite"></div><p class="microcopy">La comparación geométrica puede fallar por sombras, pintura, óxido, perspectiva o fondos complejos. No es IA de catálogo ni identifica medidas, material, resistencia o seguridad.</p>`,structural?'FOTO · GRAFO 2D EXPERIMENTAL':'FOTO · SECCIÓN AISLADA');
   dirty=true;
   for(const id of ['cropX','cropY','cropW','cropH'])$('#'+id).oninput=drawSectionPreview;
   $('#sectionCropForm').onsubmit=event=>{event.preventDefault();analyzeSectionCrop();};drawSectionPreview();
@@ -98,13 +97,60 @@ function drawSectionPreview(invalidate=true){
   const canvas=$('#sectionPreview'),img=sectionDraft.image,scale=Math.min(1,512/Math.max(img.width,img.height));canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0,canvas.width,canvas.height);
   try{const crop=sectionCrop();sectionDraft.crop=crop;const x=crop.x*canvas.width/100,y=crop.y*canvas.height/100,w=crop.width*canvas.width/100,h=crop.height*canvas.height/100;ctx.fillStyle='rgba(0,0,0,.42)';ctx.fillRect(0,0,canvas.width,y);ctx.fillRect(0,y+h,canvas.width,canvas.height-y-h);ctx.fillRect(0,y,x,h);ctx.fillRect(x+w,y,canvas.width-x-w,h);ctx.strokeStyle='#26df9d';ctx.lineWidth=3;ctx.strokeRect(x+1,y+1,Math.max(1,w-2),Math.max(1,h-2));}catch(err){sectionDraft.crop=null;$('#sectionError').hidden=false;$('#sectionError').textContent=err.message;}
 }
-function analyzeSectionCrop(){
+function analyzeSectionCrop({automatic=false}={}){
   if(!sectionDraft||busy||processingPhoto)return;$('#sectionError').hidden=true;
   try{
-    if(!$('#sectionConsent').checked)throw Error('Confirma primero las condiciones de la imagen y que revisarás la propuesta. No se crean medidas ni conexiones automáticamente.');
+    if(!automatic&&!$('#sectionConsent').checked)throw Error('Confirma primero las condiciones de la imagen y que revisarás la propuesta. No se crean medidas ni conexiones automáticamente.');
     const crop=sectionCrop(),source=sectionDraft.image,sx=source.width*crop.x/100,sy=source.height*crop.y/100,sw=source.width*crop.width/100,sh=source.height*crop.height/100,scale=Math.min(1,512/Math.max(sw,sh)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(sw*scale));canvas.height=Math.max(1,Math.round(sh*scale));const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,sx,sy,sw,sh,0,0,canvas.width,canvas.height);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
-    sectionDraft.crop=crop;sectionDraft.result=(sectionDraft.kind==='section'?analyzeSectionPixels:analyzeStructurePixels)({data:pixels.data,width:canvas.width,height:canvas.height});if(sectionDraft.kind==='section')showSectionCandidates();else showStructureCandidates();
+    sectionDraft.crop=crop;startPhotoAnalysis({data:pixels.data,width:canvas.width,height:canvas.height});
   }catch(err){$('#sectionError').hidden=false;$('#sectionError').textContent=err.message;}
+}
+// Each job owns its worker: cancellation stops computation, not only its UI callback.
+function setPhotoAnalysisState(state,title,detail){
+  const box=$('#photoAnalysisState');if(!box)return;
+  box.setAttribute('data-state',state);box.setAttribute('aria-busy',String(state==='running'));
+  box.innerHTML=`<svg class="photo-analysis-icon lucide lucide-loader-circle" aria-hidden="true" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg><h3 class="photo-analysis-title">${esc(title)}</h3><p class="photo-analysis-detail">${esc(detail)}</p>${state==='running'?'<button id="cancelPhotoAnalysis" class="textbutton" type="button">Cancelar</button>':['error','timeout','cancelled'].includes(state)?'<button id="photoAnalysisManual" class="textbutton" type="button">Elegir una forma manual</button>':''}`;
+  if($('#photoAnalysisManual'))$('#photoAnalysisManual').onclick=()=>familyChooser();
+  if(state==='running'){
+    $('#cancelPhotoAnalysis').onclick=()=>cancelPhotoAnalysis(true);
+    if(!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)photoAnalysisJob.animation=box.querySelector?.('svg')?.animate?.([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],{duration:1100,iterations:Infinity,easing:'linear'});
+  }
+}
+function releasePhotoAnalysis(job){
+  clearTimeout(job.timer);job.worker?.terminate();job.animation?.cancel();
+  if(photoAnalysisJob===job){photoAnalysisJob=null;processingPhoto=false;const controls=$('#photoCropControls');if(controls)controls.hidden=false;}
+}
+function cancelPhotoAnalysis(showState=true){
+  const job=photoAnalysisJob;if(!job)return;releasePhotoAnalysis(job);
+  if(showState)setPhotoAnalysisState('cancelled','Análisis cancelado','La foto sigue disponible. Puedes ajustar el encuadre y volver a analizar; no se creó ningún modelo.');
+}
+function startPhotoAnalysis(pixels){
+  cancelPhotoAnalysis(false);
+  const draft=sectionDraft;draft.result=null;draft.graph=null;draft.selectedCandidate=null;
+  $('#sectionCandidates').innerHTML='';
+  const job={id:++photoAnalysisSequence,draft,projectId:project.id,captureToken:sectionCaptureToken,worker:null,timer:null};
+  photoAnalysisJob=job;processingPhoto=true;$('#photoCropControls').hidden=true;
+  setPhotoAnalysisState('running',draft.kind==='section'?'Analizando sección…':'Reconociendo atril…',draft.kind==='section'?'Comparando la silueta localmente.':'Buscando un marco visible. Este piloto todavía no identifica familias de atriles.');
+  const current=()=>photoAnalysisJob===job&&sectionDraft===draft&&project.id===job.projectId&&sectionCaptureToken===job.captureToken;
+  const fail=(state,message)=>{if(!current()){releasePhotoAnalysis(job);return;}releasePhotoAnalysis(job);setPhotoAnalysisState(state,state==='timeout'?'El análisis tardó demasiado':'No se pudo analizar',message);};
+  try{
+    if(typeof Worker!=='function')throw Error('El análisis local en segundo plano no está disponible en este navegador. Puedes elegir una familia manual.');
+    job.worker=new Worker('./photo-worker.js',{type:'module',name:'terreno-photo-local'});
+    job.worker.onmessage=event=>{
+      if(!current()){releasePhotoAnalysis(job);return;}
+      const response=event.data;if(response?.id!==job.id)return;
+      if(response.error){fail('error','No se pudo procesar esta imagen. Ajusta el encuadre o prueba otra foto.');return;}
+      const result=response.result;
+      if(!result||!['proposal','candidates','unidentifiable'].includes(result.status)){fail('error','La respuesta del análisis local no es válida. Vuelve a intentarlo.');return;}
+      releasePhotoAnalysis(job);draft.result=result;
+      const unknown=result.status==='unidentifiable';setPhotoAnalysisState(unknown?'ambiguous':'result',unknown?'No hay una propuesta clara':'Borrador listo para revisar',unknown?'No se ha identificado una familia. Prueba otro encuadre o elige una forma manual.':'La coincidencia es geométrica: confirma la forma y las medidas antes de crear el modelo.');
+      if(draft.kind==='section')showSectionCandidates();else showStructureCandidates();
+    };
+    job.worker.onerror=event=>{event.preventDefault?.();fail('error','No se pudo iniciar el análisis local. Puedes reintentar o elegir una forma manual.');};
+    job.worker.onmessageerror=()=>fail('error','No se pudo leer la respuesta local. Vuelve a intentarlo.');
+    job.timer=setTimeout(()=>fail('timeout','Se detuvo el proceso sin crear un modelo. Prueba un encuadre más sencillo o elige una forma manual.'),PHOTO_ANALYSIS_TIMEOUT_MS);
+    job.worker.postMessage({id:job.id,kind:draft.kind,pixels},[pixels.data.buffer]);
+  }catch(err){fail('error',err.message);}
 }
 function showSectionCandidates(){
   const result=sectionDraft?.result;if(!result)return;
@@ -125,7 +171,7 @@ function showStructureCandidates(){
   const result=sectionDraft?.result;if(!result)return;
   const candidates=result.status==='proposal'&&Array.isArray(result.candidates)&&Array.isArray(result.nodes)&&Array.isArray(result.edges)?result.candidates.filter(c=>['bastidor','portico'].includes(c.type)&&Number.isFinite(c.score)):[];
   sectionDraft.visibleCandidates=candidates;
-  $('#sectionCandidates').innerHTML=`<h3>${candidates.length?'3 · Propuesta experimental para revisar':'No identificable con este recorte'}</h3><p>${esc(result.reason||'No hay evidencia suficiente para proponer una forma.')}</p>${candidates.length?'<p class="microcopy">El ajuste geométrico no es probabilidad. Los tramos visibles pueden ser bordes, sombras u objetos ajenos; <strong>no acreditan uniones estructurales</strong>.</p>':''}${candidates.map((c,i)=>`<button class="candidate-card" data-structure-candidate="${i}"><strong>${esc(c.label)} · ajuste ${Math.max(0,Math.min(1,c.score)).toFixed(2)}</strong><small>${esc(c.reason)}<br>Revisar puntos y tramos 2D →</small></button>`).join('')}<button id="structureManual" class="textbutton">Usar una forma típica manual sin reconocimiento →</button>`;
+  $('#sectionCandidates').innerHTML=`<h3>${candidates.length?'3 · Propuesta experimental para revisar':'No identificable con este recorte'}</h3><p>${esc(result.reason||'No hay evidencia suficiente para proponer una forma.')}</p>${candidates.length?'<p class="microcopy">El ajuste geométrico no es probabilidad. Los tramos visibles pueden ser bordes, sombras u objetos ajenos; <strong>no acreditan uniones estructurales</strong>.</p>':''}${candidates.map((c,i)=>`<button class="candidate-card" data-structure-candidate="${i}"><strong>${esc(c.label)} · ajuste ${Math.max(0,Math.min(1,c.score)).toFixed(2)}</strong><small>${esc(c.reason)}<br>Revisar puntos y tramos 2D →</small></button>`).join('')}<button id="structureManual" class="textbutton">Elegir otra forma · manual →</button>`;
   $$('[data-structure-candidate]').forEach(button=>button.onclick=()=>chooseStructureCandidate(Number(button.dataset.structureCandidate)));$('#structureManual').onclick=()=>templateForm();
 }
 function normalizeDetectedGraph(result){

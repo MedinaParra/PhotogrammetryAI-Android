@@ -197,19 +197,24 @@ async function syntheticPng(kind) {
   }, kind);
   return Buffer.from(encoded, 'base64');
 }
-async function chooseAnalysisPhoto(mode, kind) {
+async function chooseAnalysisPhoto(mode, kind, waitForResult = true) {
   const buffer = await syntheticPng(kind);
   await page.locator('#startPhoto').click();
   await page.locator('#photoAnalysisKind').selectOption(mode);
   const chooserPromise = page.waitForEvent('filechooser');
   await page.locator('#sectionPick').click();
   await (await chooserPromise).setFiles({ name: `qa-SINTETICO-${kind}.png`, mimeType: 'image/png', buffer });
-  await page.locator('#sectionCropForm').waitFor({ state: 'visible' });
+  await page.locator('#photoAnalysisState').waitFor({ state: 'visible' });
+  if (waitForResult) {
+    await page.waitForFunction(() => ['result','ambiguous'].includes(document.querySelector('#photoAnalysisState')?.dataset.state));
+    await page.locator('#photoCropControls > summary').click();
+    await page.locator('#sectionCropForm').waitFor({state:'visible'});
+  }
 }
 async function analyzeChosenPhoto() {
   await page.locator('#sectionConsent').check();
   await page.locator('#analyzeSection').click();
-  await page.waitForFunction(() => document.querySelector('#sectionCandidates')?.textContent.trim().length > 0);
+  await page.waitForFunction(() => ['result','ambiguous'].includes(document.querySelector('#photoAnalysisState')?.dataset.state) && document.querySelector('#sectionCandidates')?.textContent.trim().length > 0);
 }
 
 try {
@@ -217,6 +222,7 @@ try {
   const nativeSource = await readFile(join(root, 'android/java/org/terreno/piloto/MainActivity.java'), 'utf8');
   csp = nativeSource.match(/headers\.put\("Content-Security-Policy", "([^"]+)"\)/)?.[1];
   assert(csp, 'Read the exact CSP from MainActivity');
+  assert.match(csp, /(?:^|;)\s*worker-src 'self'\s*(?:;|$)/, 'Workers must stay on the packaged origin');
   report.browser = 'Playwright Chromium';
   report.sandbox = true;
   await launch();
@@ -372,6 +378,42 @@ try {
     assert.equal((await savedProjects()).length, 3);
   });
 
+  await step('Automatic photo worker shows progress and can cancel without saving', async () => {
+    const before=await savedProjects();let release;
+    const held=new Promise(resolve=>{release=resolve;});
+    const handler=async route=>{await held;await route.fulfill({status:200,contentType:'text/javascript',body:await readFile(join(root,'dist/photo-worker.js'))}).catch(()=>{});};
+    await context.route('**/photo-worker.js',handler);
+    try{
+      await chooseAnalysisPhoto('structure','frame',false);
+      await page.locator('#photoAnalysisState[data-state=running]').waitFor();
+      assert.equal(await page.locator('#photoAnalysisState').getAttribute('aria-busy'),'true');
+      assert.equal(await page.locator('#photoCropControls').isVisible(),false);
+      await page.screenshot({path:join(work,'photo-worker-progress.png')});
+      await page.locator('#cancelPhotoAnalysis').click();
+      assert.equal(await page.locator('#photoAnalysisState').getAttribute('data-state'),'cancelled');
+      assert.equal(await page.locator('#photoAnalysisState').getAttribute('aria-busy'),'false');
+      assert.equal(await page.locator('#photoCropControls').isVisible(),true);
+      assert.deepEqual(await savedProjects(),before);
+      release();await closeModal();
+    }finally{release();await context.unroute('**/photo-worker.js',handler);}
+  });
+  await step('Worker startup failure gives a recoverable error without model creation',async()=>{
+    const before=await savedProjects(),consoleStart=report.consoleErrors.length;
+    const handler=route=>route.fulfill({status:200,contentType:'text/javascript',body:"throw new Error('QA synthetic worker startup failure');"});
+    await context.route('**/photo-worker.js',handler);
+    try{
+      await chooseAnalysisPhoto('structure','frame',false);
+      await page.locator('#photoAnalysisState[data-state=error]').waitFor();
+      assert.equal(await page.locator('#photoAnalysisState').getAttribute('aria-busy'),'false');
+      assert.equal(await page.locator('#photoCropControls').isVisible(),true);
+      assert.deepEqual(await savedProjects(),before);
+      const expectedConsole=report.consoleErrors.splice(consoleStart);
+      assert(expectedConsole.every(message=>message.includes('QA synthetic worker startup failure')),'Unexpected console error during injected worker failure');
+      report.expectedWorkerFailureConsole=expectedConsole;
+      await closeModal();
+    }finally{await context.unroute('**/photo-worker.js',handler);}
+  });
+
   await step('Photo-first cancellation creates no project, geometry or photo', async () => {
     const before = await savedProjects();
     await chooseAnalysisPhoto('structure', 'frame');
@@ -380,13 +422,13 @@ try {
     assert.deepEqual(await savedProjects(), before);
   });
 
-  await step('Photo analysis requires conditions confirmation and abstains on blank synthetic image', async () => {
+  await step('Automatic photo analysis abstains on blank pixels; manual retry still requires confirmation', async () => {
     const before = await savedProjects();
     await chooseAnalysisPhoto('structure', 'blank');
     await page.locator('#analyzeSection').click();
     await page.locator('#sectionError:not([hidden])').waitFor();
     assert.match(await page.locator('#sectionError').textContent(), /Confirma/);
-    assert.equal((await page.locator('#sectionCandidates').textContent()).trim(), '');
+    assert.match(await page.locator('#sectionCandidates').textContent(), /No identificable/i);
     await analyzeChosenPhoto();
     assert.match(await page.locator('#sectionCandidates').textContent(), /No identificable/i);
     assert.deepEqual(await savedProjects(), before);

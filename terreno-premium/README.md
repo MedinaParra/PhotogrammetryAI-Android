@@ -12,6 +12,12 @@ El workflow público ejecuta pruebas y capturas sintéticas con Chromium sandbox
 
 ---
 
+## Foto local y selección
+
+El flujo de foto analiza el encuadre completo por defecto y ofrece recorte manual opcional. El procesamiento ocurre en un Worker local cancelable; los estados de resultado, ambigüedad, error y timeout son distintos. No se envían fotos a servidores. El motor actual sigue limitado a bastidor/pórtico frontal o sección aislada: todavía no reconoce familias generales de atriles. El objetivo de respuesta en cinco segundos requiere medición en Samsung; no se acredita aquí.
+
+La selección muestra una ficha breve y una longitud geométrica temporal, con procedencia explícita. Una longitud del modelo no sustituye una medición física. Las pruebas de assets nativos son estáticas; compilación y empaquetado no equivalen a instrumentación Android ni prueba WebView.
+
 ## Notas originales del paquete recibido
 
 **Estado verificado al 25 de octubre de 2026.** Este paquete fuente no es una APK, no acredita instalación Android y no incluye una propuesta visual aprobada por el usuario. Destino de trabajo indicado por el usuario: **PhotogrammetryAI-Android**, utilizado como almacenamiento; el contenido anterior no es la base funcional. Confirmar visibilidad/autorización antes de publicar: entregar este ZIP privado no autoriza un push público.

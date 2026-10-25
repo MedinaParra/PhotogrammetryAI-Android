@@ -33,20 +33,29 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run build
-      - run: npx --no-install playwright install --with-deps chromium
+      - run: npx --no-install playwright install chromium --no-shell
       - run: sudo apt-get install -y xvfb libgl1-mesa-dri libegl-mesa0 mesa-utils
       - name: Sandboxed premium render and touch checks
-        run: xvfb-run -a -s '-screen 0 1280x720x24' npm run test:visual-premium
+        run: xvfb-run -a -s '-screen 0 1280x720x24' sh -c 'glxinfo -B; npm run test:visual-premium'
         env:
           PREMIUM_QA_HEADED: '1'
           PREMIUM_QA_OUTPUT: artifacts/premium-qa
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          DEBUG: pw:browser
+      - name: Sandboxed local photo and persistence checks
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a -s '-screen 0 1280x720x24' npm run test:browser
+        env:
+          BROWSER_QA_HEADED: '1'
+          QA_OUTPUT_DIR: artifacts/browser-qa
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         if: always()
         with:
           name: premium-browser-${{ github.sha }}
-          path: terreno-premium/artifacts/premium-qa/
+          path: terreno-premium/artifacts/
           retention-days: 7
           if-no-files-found: warn
 

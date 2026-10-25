@@ -25,3 +25,26 @@ svg.lucide{width:21px;height:21px;flex:none}.scene-icon:hover{background:#334253
 @media(max-height:480px){#sceneMenu{padding:51px 14px 12px}#sceneMenu>button:not(#sceneMenuClose){min-height:48px}#sceneMenu h2{top:20px}}
 @media(max-width:520px){#sceneMenu{right:112px;width:calc(100vw - 132px);padding-left:10px;padding-right:10px}#sceneMenu>button:not(#sceneMenuClose){gap:9px;padding:0 8px}#sceneMenu>button span{font-size:12px}}
 #sceneMenu>button span{font-size:14px}#sceneNotice{font-size:12px}#sceneWheelMode{min-height:48px}.scene-mode .dialoghead .iconbutton{min-width:48px;min-height:48px;color:#dbe5ef;background:transparent;border-color:transparent}
+
+/* Keep the contextual details within the same quiet steel palette. */
+.scene-mode .microcopy{color:#a5b4c4!important}
+.scene-mode .inspector .datum{border-color:var(--hairline)}
+.scene-mode .inspector .profilegraphic{background:#263340;border-color:#92a8bd38;color:#b9c7d4}
+.scene-mode .inspector .sectiontitle{color:#a5b4c4}
+.scene-mode .inspector .movecontrols button{background:#263340;border-color:var(--hairline);color:#d5dfeb;min-height:44px}
+.scene-mode .inspector .photoempty{border-color:var(--hairline);color:#a5b4c4}
+.scene-mode .inspector .textbutton{color:#c1ccda}
+#sceneInspectorClose[hidden]{display:none!important}
+.premium-render[hidden]{display:none!important}
+/* Photo work stays visible and cancellable while the local worker runs. */
+.scene-mode .photo-analysis-state{padding:18px 20px;margin:12px 0 18px;border:1px solid #a6bac72b;border-radius:14px;background:#182530;color:#d9e2eb}
+.scene-mode .photo-analysis-icon{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;color:#d8bd80;vertical-align:middle}
+.scene-mode .photo-analysis-icon svg{width:26px;height:26px}
+.scene-mode #photoAnalysisState .photo-analysis-title{display:block;margin:8px 0 5px;font-size:15px;font-weight:550;color:#e4ebf2;line-height:1.45}
+.scene-mode #photoAnalysisState .photo-analysis-detail{display:block;margin:0;font-size:12px;line-height:1.6;color:#afbfcc}
+.scene-mode #cancelPhotoAnalysis{min-height:44px;min-width:96px;margin-top:10px;padding:8px 12px;border:1px solid #a6bac738;border-radius:9px;background:transparent;color:#d5dfeb}
+.scene-mode #cancelPhotoAnalysis[hidden]{display:none!important}
+.scene-mode .photo-analysis-state[data-state=error],.scene-mode .photo-analysis-state[data-state=timeout]{border-color:#c8a27355}
+.scene-mode .photo-analysis-state[data-state=cancelled] .photo-analysis-icon{color:#a5b4c4}
+.scene-mode #photoCropControls>summary{min-height:44px;padding:12px 0;color:#c0cddb;cursor:pointer}
+@media(max-height:480px){.scene-mode .photo-analysis-state{padding:12px 16px;margin:10px 0 14px}.scene-mode #photoAnalysisState .photo-analysis-title{margin-top:4px}}

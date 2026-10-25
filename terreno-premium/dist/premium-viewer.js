@@ -1,3 +1,4 @@
+import {lengthOf,toUnit} from './core.js';
 import * as THREE from './vendor/three/three.module.js';
 import {StructureViewer as SurveyViewer} from './viewer.js';
 // Render-only adapter. The survey geometry, section/roll convention, camera state,
@@ -83,7 +84,25 @@ export class StructureViewer extends SurveyViewer {
   this.drawDrawingPreview();
   const badge=document.querySelector('#renderStatus');if(badge)badge.textContent=this.rendererName;
  }
- drawLabel(m,x,y){const c=this.ctx,text=String(m.label||m.id);c.font='500 12px Inter,system-ui';const w=Math.min(220,c.measureText(text).width+28),h=30;x=Math.min(this.width-w-18,Math.max(18,x-w/2));y=Math.max(88,y-44);c.fillStyle='#202a36';c.strokeStyle='#9c8557';c.beginPath();c.roundRect(x,y,w,h,8);c.fill();c.stroke();c.fillStyle='#f4e5c4';c.fillText(text.slice(0,32),x+14,y+19);this.labelHits.push({id:m.id,x,y,w,h});}
+ selectionAnnotation(m){
+  if(m.id!==this.selectedId)return null;
+  const unit=this.project.unit||'mm',value=new Intl.NumberFormat('es-CL',{maximumFractionDigits:2}).format(toUnit(lengthOf(this.project,m),unit));
+  const profile={rhs:'RHS',i:'I / H',channel:'C / U',round:'Circular',rect:'Macizo',custom:'Otro perfil'}[m.profile?.type]||'Perfil';
+  const status=m.status==='estimated'?'Estimado · no medido':m.status==='measured'?'Medido · registro del usuario':'Confirmado por el usuario';
+  return {id:m.id,title:`${String(m.label||m.id)} · ${profile}`,dimension:`${value} ${unit} · longitud geométrica`,status};
+ }
+ drawLabel(m,x,y){
+  const c=this.ctx,annotation=this.selectionAnnotation(m),title=annotation?.title||String(m.label||m.id),lines=annotation?[title,annotation.dimension,annotation.status]:[title];
+  c.save();c.font='500 12px Inter,system-ui';
+  const w=Math.min(this.width-36,Math.max(160,Math.min(310,Math.max(...lines.map(t=>c.measureText(t).width))+28))),h=annotation?74:30;
+  const fit=text=>{if(c.measureText(text).width<=w-28)return text;while(text.length&&c.measureText(text+'…').width>w-28)text=text.slice(0,-1);return text+'…'};
+  x=Math.max(18,Math.min(this.width-w-18,x-w/2));y=Math.max(88,Math.min(this.height-h-72,y-h-14));
+  c.fillStyle='#202a36';c.strokeStyle=annotation?'#9c8557':'#526171';c.lineWidth=1;c.beginPath();c.roundRect(x,y,w,h,8);c.fill();c.stroke();
+  c.fillStyle=annotation?'#f4e5c4':'#cbd5df';c.fillText(fit(title),x+14,y+19);
+  if(annotation){c.fillStyle='#e4eaf0';c.fillText(fit(annotation.dimension),x+14,y+40);c.font='400 11px Inter,system-ui';c.fillStyle='#aebbc8';c.fillText(fit(annotation.status),x+14,y+60);}
+  c.restore();this.labelHits.push({id:m.id,x,y,w,h});
+ }
+
  pick(p){if(!this.gpuReady)return super.pick(p);for(const h of this.labelHits)if(p.x>=h.x&&p.x<=h.x+h.w&&p.y>=h.y&&p.y<=h.y+h.h)return h.id;this.syncGpuCamera();this.raycaster.setFromCamera(new THREE.Vector2(p.x/this.width*2-1,1-p.y/this.height*2),this.camera);const hit=this.raycaster.intersectObjects(this.pickMeshes||[],false)[0];this.lastPickSource=hit?'raycast':'fallback';this.lastGpuPickedId=hit?.object.userData.memberId||null;return this.lastGpuPickedId||super.pick(p);}
  destroy(){document.removeEventListener('visibilitychange',this.visibilityHandler);this.clearModel();for(const mat of [this.steel,this.selectedSteel,this.saddleSteel,this.edgesMaterial,this.selectedEdges])mat?.dispose();this.key?.shadow.dispose();this.renderer?.dispose();this.glCanvas?.remove();super.destroy();}
 }

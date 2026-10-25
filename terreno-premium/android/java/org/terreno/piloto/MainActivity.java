@@ -131,7 +131,7 @@ public final class MainActivity extends Activity {
             case "index.html": mime="text/html"; break;
             case "app.js": case "core.js": case "viewer.js": case "compat.js":
             case "premium-viewer.js": case "vendor/three/three.module.js": case "vendor/three/three.core.js":
-            case "photo-analysis.js": case "structure-analysis.js": case "templates.js": case "command-controller.js": case "step-export.js":
+            case "photo-analysis.js": case "photo-worker.js": case "structure-analysis.js": case "templates.js": case "command-controller.js": case "step-export.js":
                 mime="text/javascript"; break;
             case "style.css": case "premium.css": mime="text/css"; break;
             case "vendor/inter/InterVariable.woff2": mime="font/woff2"; break;
@@ -142,7 +142,7 @@ public final class MainActivity extends Activity {
         try {
             InputStream bytes = getAssets().open(name);
             Map<String,String> headers = new HashMap<>();
-            headers.put("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; worker-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
+            headers.put("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; worker-src 'self'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
             headers.put("X-Content-Type-Options", "nosniff");
             headers.put("Cache-Control", "no-store");
             return new WebResourceResponse(mime, "font/woff2".equals(mime) ? null : "UTF-8", 200, "OK", headers, bytes);
