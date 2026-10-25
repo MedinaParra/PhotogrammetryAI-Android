@@ -1,0 +1,8 @@
+build/
+output/
+node_modules/
+local.properties
+*.jks
+*.p12
+*.keystore
+.env

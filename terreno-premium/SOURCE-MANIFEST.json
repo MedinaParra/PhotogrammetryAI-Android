@@ -1,0 +1,178 @@
+{
+  ".gitignore": {
+    "sha256": "be04f54f1fb2974aa4c6475b350e9f5e649746bd0f22f51667a80c224718677b",
+    "bytes": 74
+  },
+  "README.md": {
+    "sha256": "79bff6dbf74461d1e11de78d6ee516d7d64183489b80201d896fea738a2deef4",
+    "bytes": 7150
+  },
+  "TRANSFER-TEST-NOTES.json": {
+    "sha256": "e1267d920c2c36f0f86b5428e80e5abc8a8112436ce93283b5c640e25d01cf46",
+    "bytes": 847
+  },
+  "VENDOR-MANIFEST.json": {
+    "sha256": "bc3af9914e3711fd1c734c294817c3b5df97f9242bcafca132b40ec484846655",
+    "bytes": 1996
+  },
+  "android/AndroidManifest.xml": {
+    "sha256": "40970d5ce13116a569cbe8115b6ab72d92f19a2529f25c1ceedc53fb107dc39e",
+    "bytes": 1445
+  },
+  "android/java/org/terreno/piloto/CameraProvider.java": {
+    "sha256": "05012b08fc0fc3c907c40bc0748be0007908e8684f06942ea68a02552b586458",
+    "bytes": 2707
+  },
+  "android/java/org/terreno/piloto/MainActivity.java": {
+    "sha256": "95e4b867a2e903a95844828dfa61e558baca1050a7a2ba2492c143d859c3f457",
+    "bytes": 24744
+  },
+  "android/res/drawable/icon.xml": {
+    "sha256": "e7f09d36dea08cdd50f858b48607fbd2da20167fd4af744982d82ef28367f718",
+    "bytes": 352
+  },
+  "android/res/values/styles.xml": {
+    "sha256": "a2895a4d1f3c3a81d2a0fe6b611f8faeac4e558e7d1a2e5634df17d6f47c0c17",
+    "bytes": 518
+  },
+  "command-controller-test.mjs": {
+    "sha256": "4afa4c63d9db2e5c470382f7cfd1d279e31ea146f93c863f43a7b346eb1586eb",
+    "bytes": 11579
+  },
+  "core-test.mjs": {
+    "sha256": "9c9697af4eff1a330623e14a2b3c3383b9c02af6999fdab823c134dd910eddf0",
+    "bytes": 10180
+  },
+  "dist/app.js": {
+    "sha256": "3e45a245b1d93437a704c43ca6526ee3d5ea9fada01ded43c4c53d0afff0f540",
+    "bytes": 87291
+  },
+  "dist/command-controller.js": {
+    "sha256": "085a0774ed82ed46186dacca0be95a56ac2a8d2187b72dc9923193e03bf64fd8",
+    "bytes": 6036
+  },
+  "dist/compat.js": {
+    "sha256": "975bc8e78aab83e422bc41337a27604f372c62f1e0e387d0b4f820a2b3c65ed7",
+    "bytes": 1021
+  },
+  "dist/core.js": {
+    "sha256": "7a08a34df79970777ac29fa7bc370e5c3e9761719b5abbf6e348b06ce469f004",
+    "bytes": 18662
+  },
+  "dist/index.html": {
+    "sha256": "6bab35ccd353c568046913745a0c425f7f9700bc010a6ef6ef7c2bb6e9c76ddb",
+    "bytes": 15356
+  },
+  "dist/photo-analysis.js": {
+    "sha256": "957db8029a49623a71f31b6cb4b20f26963ecdb7314e6eb1d8d4f5c85a0fdcdd",
+    "bytes": 12058
+  },
+  "dist/premium-viewer.js": {
+    "sha256": "0078efd9eba29b7b718a83fc823688ee2ff86b7e7a8f7cd8db04e641039c24c5",
+    "bytes": 11705
+  },
+  "dist/premium.css": {
+    "sha256": "0081eb52beccc8c48048a12a1a600800193d5ff11d34d69b8841d77e01f43ad5",
+    "bytes": 7164
+  },
+  "dist/step-export.js": {
+    "sha256": "30b48d96138ec3add82156f40b438dfe8f297437a5492dfd4067178aa3825a0f",
+    "bytes": 11182
+  },
+  "dist/structure-analysis.js": {
+    "sha256": "1ebd6c638856f466c9a55b41dc416f1f8e7208f6a3d30f90413be7a4a92850f2",
+    "bytes": 13300
+  },
+  "dist/style.css": {
+    "sha256": "912b5d8193fd8b0f614b6328df32c3b1f43ba1c4bbbc966e587e4a2fd23267c1",
+    "bytes": 29840
+  },
+  "dist/templates.js": {
+    "sha256": "331315aca7fc295358231eeec884291a1ef333b050a2fdf4457bacb58f6805dd",
+    "bytes": 8042
+  },
+  "dist/vendor/inter/InterVariable.woff2": {
+    "sha256": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
+    "bytes": 352240
+  },
+  "dist/vendor/inter/LICENSE.txt": {
+    "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a",
+    "bytes": 4380
+  },
+  "dist/vendor/lucide/LICENSE.txt": {
+    "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+    "bytes": 3208
+  },
+  "dist/vendor/three/LICENSE.txt": {
+    "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc",
+    "bytes": 1081
+  },
+  "dist/vendor/three/three.core.js": {
+    "sha256": "9edde002b066a9a05676a6127f67735b62baf399bdea529f2f7e31657da769e6",
+    "bytes": 1458113
+  },
+  "dist/vendor/three/three.module.js": {
+    "sha256": "9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea",
+    "bytes": 662772
+  },
+  "dist/viewer.js": {
+    "sha256": "9fc5fed2a5736a876b6bf5b7eec97a5c007fa0d2faecb90960792f3dc5e3bed2",
+    "bytes": 27317
+  },
+  "integration-test.mjs": {
+    "sha256": "996d9b32e72c991639968181a00168a9938a037e2eb41682e2df1576fb83cf21",
+    "bytes": 32758
+  },
+  "package.json": {
+    "sha256": "7ea926275a2a8a4b68a9f4738a2a8690822d1e61f6ad68cb1ffbe594563d0291",
+    "bytes": 693
+  },
+  "photo-analysis-test.mjs": {
+    "sha256": "f5abdf8da6126eb0bc1ff76bff453a0d031bfba64903e6c5f5cf5c99aec70d0f",
+    "bytes": 5015
+  },
+  "premium-test.mjs": {
+    "sha256": "e913310f9594f5cce4eaa41fa14b4545632c059543dd850917a5c511683a6ebf",
+    "bytes": 2103
+  },
+  "scripts/browser-qa.mjs": {
+    "sha256": "0549656ee6dbfb2a9feff0b2341d4b391cb766fa8ace81aaa646c766b4e82be2",
+    "bytes": 48293
+  },
+  "scripts/build-apk.sh": {
+    "sha256": "4ae5d5ce3b17e6ba8c0a0af2d0fa74649d61af258b87181ddb7cf29c5a35b9aa",
+    "bytes": 3208
+  },
+  "scripts/build.mjs": {
+    "sha256": "ae1072384863c41b145a1645221217d590a0aaa1169178d2e6fb9e5e86dcfaf4",
+    "bytes": 1178
+  },
+  "scripts/premium-qa.mjs": {
+    "sha256": "56b31d2e4d91bd6dec4b61008a042b2aff89c4b3803c1fdf2350864c7226c4da",
+    "bytes": 6977
+  },
+  "scripts/verify-step-freecad.py": {
+    "sha256": "2e06ffd5aede954e800fec964564a81013b44b3ff389acb1ca2c8a30887aab95",
+    "bytes": 2301
+  },
+  "scripts/verify-step-occt.py": {
+    "sha256": "b3b5a52573842709859302ae112a56396f8ce554c96710ba6624bc914d95a68e",
+    "bytes": 2965
+  },
+  "step-export-test.mjs": {
+    "sha256": "6fa8dc65ea846c27313b622a21feb3c8db24b51af9ceba9fd77e660928b78268",
+    "bytes": 9228
+  },
+  "structure-analysis-test.mjs": {
+    "sha256": "4b0f39a4a7e3f4d2632900553e85d0225463333cbdaf47705eb071cc0e6bf89a",
+    "bytes": 8477
+  },
+  "templates-test.mjs": {
+    "sha256": "5aac1f1640149f441d5777f48c740a890248c02cf38154a4f0de766e6219e372",
+    "bytes": 7594
+  },
+  "viewer-test.mjs": {
+    "sha256": "90ca14c494b8375d1d1216338cbfd81225e596087bbff49a0e43bf5e806e438c",
+    "bytes": 20948
+  }
+}

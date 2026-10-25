@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#0e3f3c"><meta name="description" content="Levantamiento estructural manual: geometría, mediciones y evidencia guardadas en tu dispositivo."><title>Terreno · Levantamiento estructural</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="premium.css"></head>
+<body class="scene-mode"><header class="topbar"><a class="brand" href="#"><span class="brandmark">T<span>⌁</span></span><span>terreno<small>LEVANTAMIENTO ESTRUCTURAL</small></span></a><div class="topright"><span class="privacy">◉ Privado · datos locales</span><button id="helpBtn" class="iconbutton" aria-label="Ayuda y límites">?</button></div></header>
+<div class="app"><aside class="sidebar"><div class="eyebrow">ESPACIO DE TRABAJO</div><button id="projectPicker" class="projectpicker"><span><small>PROYECTO ACTUAL</small><strong id="projectName">Cargando…</strong></span><span>⌄</span></button><div class="projectmeta" id="projectMeta"></div><button id="newProject" class="button secondary wide">＋ Nuevo levantamiento</button><div class="divider"></div><div class="navlabel">REGISTRO EN TERRENO</div><a class="navitem active" href="#model"><span>▧</span> Modelo y piezas <span id="memberCount" class="count">0</span></a><button id="backupBtn" class="navitem"><span>⇩</span> Respaldo e importación</button><button id="instrumentBtn" class="navitem"><span>⌁</span> Instrumento <span class="tinybadge">Manual</span></button><div class="sidebottom"><div class="localdot"></div><strong id="saveState">Iniciando almacenamiento</strong><p id="saveHint">Los datos de campo permanecen en este navegador.</p><button class="textbutton" id="quickExport">Exportar respaldo →</button><div class="version">TERRENO / ANDROID 1.3.0 · PILOTO</div></div></aside>
+<main id="model"><div class="pagehead"><div><div class="eyebrow">DEL TERRENO AL MODELO</div><h1>Tu estructura, pieza a pieza.</h1><p>Ubica, mide y deja evidencia de lo que encuentras.</p></div><button id="addMember" class="button primary">＋ Añadir pieza</button></div><section class="quickstart" aria-label="Inicio rápido"><div><div class="eyebrow">EMPIEZA POR LO QUE TIENES</div><h2>Foto o forma típica.</h2><p>Foto de marco: borrador 2D experimental.<br>O forma típica manual con tus medidas.</p></div><div class="quickstart-actions"><button id="startPhoto" class="button primary">▣ Empezar con foto</button><button id="startTemplate" class="button secondary">▧ Usar forma típica</button></div><p class="quickstart-limit">Piloto: debes revisar puntos y tramos; no recupera escala, profundidad ni conexiones ocultas de la foto.</p></section><div id="demoBanner" class="notice demo" hidden><span>✧</span><div><strong>Atril de demostración</strong> · geometría sintética, no corresponde a una estructura real ni a datos de una empresa.</div><button id="newFromDemo" class="textbutton">Crear el mío →</button></div><div id="errorBanner" class="notice error" role="alert" hidden></div>
+<section class="workspace"><div class="modelcolumn"><div class="viewerpanel"><div class="viewerhead"><div><span class="livecircle"></span><strong>Modelo 3D</strong><span class="subtle">Esquemático</span></div><div class="unitwrap"><button id="fieldModeBtn" class="textbutton">Modo campo</button><label for="unitSelect">Unidad</label><select id="unitSelect"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></div></div><div class="canvaswrap"><canvas id="canvas" tabindex="0" aria-label="Modelo tridimensional esquemático. Arrastra para girar; usa las vistas y los controles de posición para editar con precisión."></canvas><div class="viewpreset compact-tools"><button id="orientationBtn" aria-label="Abrir cubo de orientación">◇ Vistas</button><button id="azimuthToggle" aria-label="Abrir círculo virtual de giro horizontal" aria-expanded="false" aria-controls="azimuthPanel">◌ Giro</button><button id="controlPanelBtn" aria-label="Controles táctiles contextuales">⋯</button></div><section id="azimuthPanel" class="azimuth-panel" hidden aria-label="Círculo virtual de azimut"><div class="azimuth-title"><span>Giro de cámara</span><button id="azimuthClose" aria-label="Cerrar círculo de giro">×</button></div><div id="azimuthDial" class="azimuth-dial" role="slider" tabindex="0" aria-label="Azimut horizontal de cámara" aria-valuemin="0" aria-valuemax="360" aria-valuenow="45"><div id="azimuthMarker" class="azimuth-marker"></div><strong id="azimuthValue">45°</strong></div><div class="azimuth-steps"><button id="azimuthMinus" aria-label="Girar cámara menos quince grados">−15°</button><span>Arrastra el círculo</span><button id="azimuthPlus" aria-label="Girar cámara quince grados">＋15°</button></div></section><div class="zoomtools"><button id="zoomIn" aria-label="Acercar">＋</button><button id="fitView" aria-label="Ajustar vista">⊡</button><button id="zoomOut" aria-label="Alejar">−</button></div><div class="emptycanvas" id="emptyCanvas" hidden><strong>Empieza con una pieza</strong><span>Define sus extremos y su sección.<br>El modelo crece contigo.</span></div><div class="viewerhint" id="viewerHint">1 dedo: girar · 2 dedos: desplazar / acercar</div></div><div class="viewerfoot"><div class="modetoggle"><button id="orbitMode" class="selected">↻ Girar</button><button id="moveMode">↔ Mover pieza</button></div><button id="undoBtn" class="textbutton" disabled>↶ Deshacer</button></div></div><div class="legend"><span><i class="estimated"></i>Estimado</span><span><i class="measured"></i>Medido</span><span><i class="confirmed"></i>Confirmado por ti</span></div>
+<div class="piecespanel"><div class="sectionhead"><div><h2>Piezas registradas <span id="pieceTotal">0</span></h2><p id="piecesSubtitle">Selecciona una pieza para revisar su ficha.</p></div><input id="searchPiece" aria-label="Buscar pieza" placeholder="Buscar ID o pieza…" type="search"></div><div class="piececolumns"><span>PIEZA / PERFIL</span><span>LONGITUD</span><span>ESTADO</span></div><div id="piecesList" class="pieceslist"></div></div></div>
+<aside class="inspector" id="inspector"><div id="inspectorContent"></div></aside></section><footer class="mainfooter"><span>Las cotas se almacenan internamente en milímetros.</span><span>V1 piloto · validar en tu teléfono antes de uso operacional.</span></footer></main></div>
+<div id="sceneHeader"><button id="sceneProjects" class="scene-brand" aria-label="Proyectos y opciones"><strong>TERRENO <span>· CAMPO</span></strong><small id="sceneProjectName">Cargando…</small></button><span id="sceneState">Guardado local</span><button id="sceneOrientation" class="scene-icon" aria-label="Cubo de orientación"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-box"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+  <path d="m3.3 7 8.7 5 8.7-5" />
+  <path d="M12 22V12" />
+</svg></button></div>
+<div id="sceneNotice" role="status">Ejemplo ajustable · no medido</div>
+<div id="sceneFooter"><button id="scenePhoto" class="scene-icon" aria-label="Empezar con fotografía"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-camera"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
+  <circle cx="12" cy="13" r="3" />
+</svg></button><span id="sceneProgress"><b>MODELO</b><span>Levantamiento estructural</span></span><button id="sceneFit" class="scene-icon" aria-label="Encuadrar modelo"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-scan"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+  <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+  <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+  <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+</svg></button><button id="sceneSession" class="scene-icon" aria-label="Sesión de campo y notificaciones"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-pause"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <rect x="14" y="3" width="5" height="18" rx="1" />
+  <rect x="5" y="3" width="5" height="18" rx="1" />
+</svg></button></div>
+<nav id="sceneMenu" aria-label="Acciones de terreno" hidden><h2>Herramientas</h2><button id="sceneMenuClose" aria-label="Cerrar menú lateral"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-x"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M18 6 6 18" />
+  <path d="m6 6 12 12" />
+</svg></button><button data-scene-action="family"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-layers"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" />
+  <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" />
+  <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" />
+</svg><span>Tipo de atril</span></button><button data-scene-action="add"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-plus"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M5 12h14" />
+  <path d="M12 5v14" />
+</svg><span>Agregar viga</span></button><button data-scene-action="piece"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-ruler"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" />
+  <path d="m14.5 12.5 2-2" />
+  <path d="m11.5 9.5 2-2" />
+  <path d="m8.5 6.5 2-2" />
+  <path d="m17.5 15.5 2-2" />
+</svg><span>Pieza y medida</span></button><button data-scene-action="photo"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-camera"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
+  <circle cx="12" cy="13" r="3" />
+</svg><span>Foto</span></button><button data-scene-action="project"><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-folder"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+</svg><span>Proyecto</span></button><small>Gira para recorrer.<br>Toca para aceptar.</small></nav>
+<div id="sceneWheelPanel"><button id="sceneWheelMode" aria-label="Alternar rueda entre menú y cámara">Menú</button><div id="sceneWheel" role="slider" tabindex="0" aria-label="Rueda virtual del menú" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0"><button id="sceneAccept" data-icon="menu" aria-label="Abrir menú o aceptar opción"><svg
+  aria-hidden="true" focusable="false" class="icon-menu lucide lucide-menu"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M4 5h16" />
+  <path d="M4 12h16" />
+  <path d="M4 19h16" />
+</svg><svg
+  aria-hidden="true" focusable="false" class="icon-check lucide lucide-check"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M20 6 9 17l-5-5" />
+</svg><svg
+  aria-hidden="true" focusable="false" class="icon-rotate lucide lucide-rotate-3d"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m15.194 13.707 3.814 1.86-1.86 3.814" />
+  <path d="M16.47214 7.52786 A 5 10 0 1 0 13 21.79796" />
+  <path d="M21.79796 11 A 10 5 0 1 0 19 15.57071" />
+</svg></button><span id="sceneWheelMark"></span></div></div>
+<button id="sceneInspectorClose" class="scene-icon" aria-label="Cerrar ficha" hidden><svg
+  aria-hidden="true" focusable="false" class=" lucide lucide-x"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.65"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M18 6 6 18" />
+  <path d="m6 6 12 12" />
+</svg></button>
+<div id="fieldExitBar"><span>Atento al entorno · detente para usar la pantalla</span><button id="fieldExit" class="button outline" hidden>Terminar campo</button></div><dialog id="modal"><div class="dialoghead"><div><div class="eyebrow" id="modalEyebrow">TERRENO</div><h2 id="modalTitle"></h2></div><button class="iconbutton" id="closeModal" aria-label="Cerrar">×</button></div><div id="modalBody"></div></dialog><div id="toast" role="status" aria-live="polite"></div><input type="file" id="importFile" accept="application/json,.json" hidden><input type="file" id="photoFile" accept="image/jpeg,image/png,image/webp" hidden><input type="file" id="cameraFile" accept="image/*" capture="environment" hidden><input type="file" id="sectionPhotoFile" accept="image/jpeg,image/png,image/webp" hidden><input type="file" id="sectionCameraFile" accept="image/*" capture="environment" hidden><script src="compat.js"></script><script type="module" src="app.js"></script><span id="renderStatus" aria-hidden="true">Vista previa de diseño</span></body></html>

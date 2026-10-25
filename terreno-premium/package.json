@@ -1,0 +1,15 @@
+{
+  "name": "terreno-levantamiento",
+  "version": "1.3.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node core-test.mjs && node integration-test.mjs && node viewer-test.mjs && node templates-test.mjs && node photo-analysis-test.mjs && node structure-analysis-test.mjs && node command-controller-test.mjs && node step-export-test.mjs && node premium-test.mjs",
+    "test:step": "node step-export-test.mjs",
+    "build": "node scripts/build.mjs",
+    "preview": "python3 -m http.server 8080 --directory dist",
+    "build:apk": "bash scripts/build-apk.sh",
+    "test:browser": "node scripts/browser-qa.mjs",
+    "test:visual-premium": "node scripts/premium-qa.mjs"
+  }
+}

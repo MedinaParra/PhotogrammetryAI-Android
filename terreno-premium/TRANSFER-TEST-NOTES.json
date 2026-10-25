@@ -1,0 +1,16 @@
+{
+  "scope": "Local Node regression and static build on sanitized transfer copy only",
+  "node": "202 prior regression groups plus premium renderer group passed",
+  "build": "Static build passed",
+  "browserPremium": "NOT EXECUTED / no approved screenshots supplied",
+  "nativePremium": "NOT VALIDATED; native allowlist/font integration pending",
+  "publish": "No GitHub push or release from this packaging task",
+  "sanitization": [
+    "Removed enterprise brand from HTML",
+    "Removed work-order reference from template comment",
+    "Independent synthetic family defaults2000x1000mm R800; round fictitious profiles/positions",
+    "Excluded old README/workflows/signing fingerprint, binaries, logs, build outputs, caches, personal documents and photos",
+    "Original private source untouched"
+  ],
+  "timestampUTC": "2026-10-25T19:26:00Z"
+}

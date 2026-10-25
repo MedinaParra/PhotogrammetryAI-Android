@@ -1,0 +1,54 @@
+{
+  "dependencies": [
+    {
+      "name": "three",
+      "version": "0.186.1",
+      "registry": "https://registry.npmjs.org/three",
+      "integrity": "sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==",
+      "license": "MIT",
+      "used": "build/three.module.js + build/three.core.js"
+    },
+    {
+      "name": "lucide-static",
+      "version": "1.61.0",
+      "registry": "https://registry.npmjs.org/lucide-static",
+      "integrity": "sha512-yLAiQB3MWUJEstsEDAwenSA3m7vr1tdLvgnC16Q/XMxRRma0DWwMs8M2bWlvgShrIs1m2mWMJ+0AiahqQO4GrA==",
+      "license": "ISC + MIT Feather notice",
+      "used": "inline SVG subset; original license retained; stroke width adapted to 1.65"
+    },
+    {
+      "name": "Inter",
+      "version": "4.1",
+      "source": "https://github.com/rsms/inter/tree/v4.1/docs/font-files",
+      "fontURL": "https://raw.githubusercontent.com/rsms/inter/v4.1/docs/font-files/InterVariable.woff2",
+      "license": "OFL-1.1"
+    }
+  ],
+  "files": {
+    "dist/vendor/inter/InterVariable.woff2": {
+      "sha256": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
+      "bytes": 352240
+    },
+    "dist/vendor/inter/LICENSE.txt": {
+      "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a",
+      "bytes": 4380
+    },
+    "dist/vendor/lucide/LICENSE.txt": {
+      "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+      "bytes": 3208
+    },
+    "dist/vendor/three/LICENSE.txt": {
+      "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc",
+      "bytes": 1081
+    },
+    "dist/vendor/three/three.core.js": {
+      "sha256": "9edde002b066a9a05676a6127f67735b62baf399bdea529f2f7e31657da769e6",
+      "bytes": 1458113
+    },
+    "dist/vendor/three/three.module.js": {
+      "sha256": "9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea",
+      "bytes": 662772
+    }
+  },
+  "runtimeNetwork": "none; bundled local assets only"
+}
